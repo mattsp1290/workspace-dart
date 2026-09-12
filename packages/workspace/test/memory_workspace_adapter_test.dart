@@ -86,17 +86,18 @@ void main() {
           'root', [MemoryFileNode('a', []), MemoryFileNode('b', [])]),
     );
     root = WorkspaceEntryRef(workspaceId: id, token: adapter.rootToken);
+    final pageBudget = budget();
     final first = (await adapter.list(WorkspaceListRequest(
             workspaceId: id,
             directory: root,
-            budget: budget())) as WorkspaceSuccess<WorkspacePage>)
+            budget: pageBudget)) as WorkspaceSuccess<WorkspacePage>)
         .value;
     expect(first.completion, ListCompletion.hasMore);
     final second = await adapter.list(WorkspaceListRequest(
         workspaceId: id,
         directory: root,
         cursor: first.cursor,
-        budget: budget()));
+        budget: pageBudget));
     expect(
         (second as WorkspaceSuccess<WorkspacePage>).value.entries.single.name,
         'b');
@@ -105,6 +106,57 @@ void main() {
         workspaceId: id, directory: root, budget: budget()));
     expect((afterClose as WorkspaceFailure<WorkspacePage>).kind,
         WorkspaceFailureKind.closed);
+  });
+
+  test('cursor cannot be replayed against another directory', () async {
+    adapter = MemoryWorkspaceAdapter(
+      workspaceId: id,
+      pageSize: 1,
+      root: MemoryDirectoryNode('root', [
+        MemoryDirectoryNode(
+            'first', [MemoryFileNode('a', []), MemoryFileNode('b', [])]),
+        MemoryDirectoryNode('second', [MemoryFileNode('c', [])]),
+      ]),
+    );
+    root = WorkspaceEntryRef(workspaceId: id, token: adapter.rootToken);
+    final rootBudget = budget();
+    final rootPage = (await adapter.list(WorkspaceListRequest(
+            workspaceId: id,
+            directory: root,
+            budget: rootBudget)) as WorkspaceSuccess<WorkspacePage>)
+        .value;
+    final firstDirectory = rootPage.entries.first as WorkspaceDirectory;
+    final directoryBudget = budget();
+    final page = (await adapter.list(WorkspaceListRequest(
+            workspaceId: id,
+            directory: firstDirectory.ref,
+            budget: directoryBudget)) as WorkspaceSuccess<WorkspacePage>)
+        .value;
+    final replay = await adapter.list(WorkspaceListRequest(
+        workspaceId: id,
+        directory: root,
+        cursor: page.cursor,
+        budget: directoryBudget));
+    expect((replay as WorkspaceFailure<WorkspacePage>).kind,
+        WorkspaceFailureKind.invalidCursor);
+  });
+
+  test('malformed requests and pre-first-entry exhaustion are typed failures',
+      () async {
+    final invalidBudget = await adapter.list(WorkspaceListRequest(
+        workspaceId: id,
+        directory: root,
+        budget: OperationBudget(
+            maxEntries: -1,
+            maxBytes: 1,
+            deadline: DateTime.now(),
+            cancellationToken: CancellationToken())));
+    expect((invalidBudget as WorkspaceFailure<WorkspacePage>).kind,
+        WorkspaceFailureKind.invalidRequest);
+    final noEntries = await adapter.list(WorkspaceListRequest(
+        workspaceId: id, directory: root, budget: budget(entries: 0)));
+    expect((noEntries as WorkspaceFailure<WorkspacePage>).kind,
+        WorkspaceFailureKind.budgetExceeded);
   });
 
   test('cancelled work never becomes an empty directory', () async {

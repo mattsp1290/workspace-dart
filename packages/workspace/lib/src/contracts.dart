@@ -26,10 +26,7 @@ final class OperationBudget {
   final DateTime deadline;
   final CancellationToken cancellationToken;
   bool get isExpired => DateTime.now().isAfter(deadline);
-  void validate() {
-    if (maxEntries < 0 || maxBytes < 0)
-      throw ArgumentError('Budget limits cannot be negative.');
-  }
+  bool get isValid => maxEntries >= 0 && maxBytes >= 0;
 }
 
 final class BudgetUsage {
@@ -85,10 +82,7 @@ final class ByteRange {
   const ByteRange({required this.offset, required this.count});
   final int offset;
   final int count;
-  void validate() {
-    if (offset < 0 || count < 0)
-      throw ArgumentError('Range values cannot be negative.');
-  }
+  bool get isValid => offset >= 0 && count >= 0;
 }
 
 final class WorkspaceListRequest {
@@ -118,12 +112,13 @@ final class WorkspaceReadRequest {
 }
 
 final class WorkspacePage {
-  const WorkspacePage(
-      {required this.entries,
+  WorkspacePage(
+      {required List<WorkspaceEntry> entries,
       required this.completion,
       required this.consistency,
       required this.usage,
-      this.cursor});
+      this.cursor})
+      : entries = List.unmodifiable(entries);
   final List<WorkspaceEntry> entries;
   final ListCompletion completion;
   final ListConsistency consistency;
@@ -138,16 +133,21 @@ final class WorkspaceRead {
       required this.eof,
       required this.actualRevision,
       required this.stability,
+      required this.usage,
       this.expectedRevision})
-      : bytes = Uint8List.fromList(bytes),
+      : _bytes = Uint8List.fromList(bytes),
         sliceSha256 = sha256.convert(bytes).toString();
-  final Uint8List bytes;
+  final Uint8List _bytes;
+
+  /// A defensive copy of the exact digest-evidenced byte slice.
+  Uint8List get bytes => Uint8List.fromList(_bytes);
   final int offset;
   final bool eof;
   final String sliceSha256;
   final ContentRevision actualRevision;
   final ContentRevision? expectedRevision;
   final RevisionStability stability;
+  final BudgetUsage usage;
 }
 
 sealed class WorkspaceOutcome<T> {
@@ -174,6 +174,7 @@ enum WorkspaceFailureKind {
   budgetExceeded,
   invalidReference,
   invalidCursor,
+  invalidRequest,
   permissionLost,
   unavailable,
   notFound,
@@ -194,23 +195,42 @@ final class WorkspaceAccess {
   WorkspaceAccess(this._adapter);
   final WorkspaceAdapter _adapter;
   bool _closed = false;
+  final Set<Future<void>> _active = <Future<void>>{};
+  Future<WorkspaceOutcome<T>> _track<T>(
+      Future<WorkspaceOutcome<T>> Function() operation) {
+    if (_closed) {
+      return Future<WorkspaceOutcome<T>>.value(
+          WorkspaceFailure<T>(WorkspaceFailureKind.closed));
+    }
+    late final Future<void> done;
+    final result = operation().then((value) {
+      if (_closed) return WorkspaceFailure<T>(WorkspaceFailureKind.closed);
+      return value;
+    });
+    done = result.then<void>((_) {}, onError: (_, __) {});
+    _active.add(done);
+    done.whenComplete(() => _active.remove(done));
+    return result;
+  }
+
   Future<WorkspaceOutcome<WorkspaceDirectory>> restore(
           WorkspaceId workspaceId) =>
       _closed
           ? Future.value(const WorkspaceFailure(WorkspaceFailureKind.closed))
-          : _adapter.restore(workspaceId);
+          : _track(() => _adapter.restore(workspaceId));
   Future<WorkspaceOutcome<WorkspacePage>> list(WorkspaceListRequest request) =>
       _closed
           ? Future.value(const WorkspaceFailure(WorkspaceFailureKind.closed))
-          : _adapter.list(request);
+          : _track(() => _adapter.list(request));
   Future<WorkspaceOutcome<WorkspaceRead>> read(WorkspaceReadRequest request) =>
       _closed
           ? Future.value(const WorkspaceFailure(WorkspaceFailureKind.closed))
-          : _adapter.read(request);
+          : _track(() => _adapter.read(request));
   Future<void> close() async {
     if (!_closed) {
       _closed = true;
       await _adapter.close();
+      await Future.wait<void>(_active.toList());
     }
   }
 }

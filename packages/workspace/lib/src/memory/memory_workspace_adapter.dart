@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import '../contracts.dart';
@@ -31,13 +32,22 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
   final int pageSize;
   bool _closed = false;
   final Map<String, MemoryNode> _nodes = {};
-  final Map<String, int> _cursors = {};
+  final Map<String, _CursorState> _cursors = {};
   int _nextCursor = 0;
   String get rootToken => _tokenFor(root, '');
   String _tokenFor(MemoryNode node, String path) {
     final token = sha256.convert('$path/${node.name}'.codeUnits).toString();
     _nodes[token] = node;
     return token;
+  }
+
+  bool _isSafeName(String name) {
+    try {
+      WorkspaceDisplayPath(name);
+      return true;
+    } on FormatException {
+      return false;
+    }
   }
 
   WorkspaceFailure<T> _stateFailure<T>(OperationBudget budget) =>
@@ -51,6 +61,8 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
     if (_closed) return const WorkspaceFailure(WorkspaceFailureKind.closed);
     if (id != workspaceId)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
+    if (!_isSafeName(root.name))
+      return const WorkspaceFailure(WorkspaceFailureKind.invalidRequest);
     return WorkspaceSuccess(WorkspaceDirectory(
         ref: WorkspaceEntryRef(workspaceId: workspaceId, token: rootToken),
         displayPath: WorkspaceDisplayPath(root.name),
@@ -60,7 +72,8 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
   @override
   Future<WorkspaceOutcome<WorkspacePage>> list(
       WorkspaceListRequest request) async {
-    request.budget.validate();
+    if (!request.budget.isValid)
+      return const WorkspaceFailure(WorkspaceFailureKind.invalidRequest);
     if (_closed ||
         request.budget.isExpired ||
         request.budget.cancellationToken.isCancelled)
@@ -74,23 +87,50 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
         (request.directory.token == rootToken ? root : null);
     if (node is! MemoryDirectoryNode)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
+    final priorUsage = request.cursor == null
+        ? const BudgetUsage()
+        : _cursorUsage(request.cursor!, request);
+    if (priorUsage == null)
+      return const WorkspaceFailure(WorkspaceFailureKind.invalidCursor);
     final start = request.cursor == null
         ? 0
-        : _cursors.remove(request.cursor!.token) ?? -1;
+        : _cursors.remove(request.cursor!.token)!.nextIndex;
     if (start < 0 || start > node.children.length)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidCursor);
     final entries = <WorkspaceEntry>[];
+    var metadataBytes = 0;
     for (var i = start; i < node.children.length; i++) {
       if (request.budget.cancellationToken.isCancelled)
         return const WorkspaceFailure(WorkspaceFailureKind.cancelled);
-      if (entries.length >= request.budget.maxEntries)
+      if (priorUsage.entries + entries.length >= request.budget.maxEntries ||
+          priorUsage.bytes + metadataBytes >= request.budget.maxBytes) {
+        if (entries.isEmpty) {
+          return const WorkspaceFailure(WorkspaceFailureKind.budgetExceeded);
+        }
         return WorkspaceSuccess(WorkspacePage(
             entries: entries,
             completion: ListCompletion.budgetExhausted,
             consistency: ListConsistency.verified,
-            usage: BudgetUsage(entries: entries.length),
+            usage:
+                priorUsage.add(entries: entries.length, bytes: metadataBytes),
             cursor: null));
+      }
       final child = node.children[i];
+      if (!_isSafeName(child.name))
+        return const WorkspaceFailure(WorkspaceFailureKind.invalidRequest);
+      final childMetadataBytes = utf8.encode(child.name).length;
+      if (priorUsage.bytes + metadataBytes + childMetadataBytes >
+          request.budget.maxBytes) {
+        if (entries.isEmpty) {
+          return const WorkspaceFailure(WorkspaceFailureKind.budgetExceeded);
+        }
+        return WorkspaceSuccess(WorkspacePage(
+            entries: entries,
+            completion: ListCompletion.budgetExhausted,
+            consistency: ListConsistency.verified,
+            usage:
+                priorUsage.add(entries: entries.length, bytes: metadataBytes)));
+      }
       final token = _tokenFor(child, request.directory.token);
       final ref = WorkspaceEntryRef(workspaceId: workspaceId, token: token);
       final display = WorkspaceDisplayPath(child.name);
@@ -102,14 +142,21 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
               byteLength: child.bytes.length)
           : WorkspaceDirectory(
               ref: ref, displayPath: display, name: child.name));
+      metadataBytes += childMetadataBytes;
       if (entries.length == pageSize && i + 1 < node.children.length) {
         final cursor = 'cursor-${_nextCursor++}';
-        _cursors[cursor] = i + 1;
+        _cursors[cursor] = _CursorState(
+            directoryToken: request.directory.token,
+            nextIndex: i + 1,
+            budget: request.budget,
+            usage:
+                priorUsage.add(entries: entries.length, bytes: metadataBytes));
         return WorkspaceSuccess(WorkspacePage(
             entries: entries,
             completion: ListCompletion.hasMore,
             consistency: ListConsistency.verified,
-            usage: BudgetUsage(entries: entries.length),
+            usage:
+                priorUsage.add(entries: entries.length, bytes: metadataBytes),
             cursor:
                 WorkspacePageCursor(workspaceId: workspaceId, token: cursor)));
       }
@@ -118,14 +165,25 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
         entries: entries,
         completion: ListCompletion.complete,
         consistency: ListConsistency.verified,
-        usage: BudgetUsage(entries: entries.length)));
+        usage: priorUsage.add(entries: entries.length, bytes: metadataBytes)));
+  }
+
+  BudgetUsage? _cursorUsage(
+      WorkspacePageCursor cursor, WorkspaceListRequest request) {
+    final state = _cursors[cursor.token];
+    if (state == null ||
+        state.directoryToken != request.directory.token ||
+        state.budget.maxEntries != request.budget.maxEntries ||
+        state.budget.maxBytes != request.budget.maxBytes ||
+        state.budget.deadline != request.budget.deadline) return null;
+    return state.usage;
   }
 
   @override
   Future<WorkspaceOutcome<WorkspaceRead>> read(
       WorkspaceReadRequest request) async {
-    request.budget.validate();
-    request.range.validate();
+    if (!request.budget.isValid || !request.range.isValid)
+      return const WorkspaceFailure(WorkspaceFailureKind.invalidRequest);
     if (_closed ||
         request.budget.isExpired ||
         request.budget.cancellationToken.isCancelled)
@@ -152,7 +210,8 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
         eof: end == node.bytes.length,
         actualRevision: revision,
         expectedRevision: request.expectedRevision,
-        stability: stability));
+        stability: stability,
+        usage: BudgetUsage(bytes: bytes.length)));
   }
 
   @override
@@ -161,4 +220,16 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
     _nodes.clear();
     _cursors.clear();
   }
+}
+
+final class _CursorState {
+  const _CursorState(
+      {required this.directoryToken,
+      required this.nextIndex,
+      required this.budget,
+      required this.usage});
+  final String directoryToken;
+  final int nextIndex;
+  final OperationBudget budget;
+  final BudgetUsage usage;
 }
