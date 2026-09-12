@@ -1,0 +1,19 @@
+name: workspace_flutter
+description: Flutter facade placeholder for capability-bounded workspace access.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.5.0
+dependencies:
+  flutter:
+    sdk: flutter
+  workspace:
+    path: ../workspace
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.mattsp1290.workspace_flutter
+        pluginClass: WorkspaceFlutterPlugin
+      ios:
+        pluginClass: WorkspaceFlutterPlugin

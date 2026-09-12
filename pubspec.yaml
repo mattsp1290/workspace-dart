@@ -1,0 +1,6 @@
+name: workspace_dart_workspace
+publish_to: none
+environment:
+  sdk: ^3.5.0
+workspace:
+  - packages/workspace

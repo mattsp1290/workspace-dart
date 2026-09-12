@@ -1,0 +1,11 @@
+name: workspace
+description: Bounded, read-only, workspace-scoped byte access.
+version: 0.1.0
+repository: https://github.com/mattsp1290/workspace-dart
+environment:
+  sdk: ^3.5.0
+resolution: workspace
+dependencies:
+  crypto: ^3.0.3
+dev_dependencies:
+  test: ^1.25.0
