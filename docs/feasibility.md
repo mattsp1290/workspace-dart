@@ -1,7 +1,8 @@
 # Native feasibility evidence
 
-Evidence date: 2026-09-13. Source state: committed local hardening based on
-`38fc3b8`; no published immutable release pin is claimed yet.
+Evidence date: 2026-09-13. Source state: published commit
+`d3de2811958768cef428307c3bb0d0d207a8de30`; a clean external consumer
+resolved both packages to that exact Git commit and passed its API smoke test.
 
 ## Toolchain
 
@@ -30,12 +31,14 @@ Evidence date: 2026-09-13. Source state: committed local hardening based on
   dedicated compatibility host builds, installs, and launches.
 - Both production artifacts pass the fixture-marker exclusion scans.
 
-## Incomplete physical evidence
+## Physical evidence and remaining gaps
 
-- The Android system-picker journey could not complete because another
-  foreground test application on the shared device repeatedly displaced the
-  document picker. No selection, restart restoration, provider traversal, or
-  resource-balance claim is made from that attempt.
+- On an AYN Thor running Android 13, the production example selected only the
+  synthetic `Documents/workspace_dart_probe` folder through the system picker.
+  After the example package was force-stopped and relaunched, it restored the
+  stored grant, listed the folder, and read the 39-byte synthetic sample with
+  unverified revision stability. No user content, tree URI, or native document
+  ID was recorded.
 - Cloud-only, provider failure, revocation, moved/deleted entry, concurrent
   mutation, hard-kill acquisition-window, and every required iPhone local or
   cloud-provider row remain unverified.
