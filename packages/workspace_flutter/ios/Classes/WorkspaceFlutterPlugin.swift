@@ -524,14 +524,15 @@ public final class WorkspaceFlutterPlugin: NSObject, FlutterPlugin, UIDocumentPi
       operationId: operationId,
       workspaceId: workspaceId,
       remainingMillis: remainingMillis,
-      settle: { operation, terminal in
-        if operation.isCancelled() {
-          result(self.error("cancelled"))
-          return
-        }
+      settle: { _, terminal in
         switch terminal {
         case let .success(value): result(value)
-        case let .failure(error): result(self.flutterError(error))
+        case let .failure(error):
+          if let terminalError = error as? WorkspaceTerminalFailure {
+            result(self.error(terminalError.code))
+          } else {
+            result(self.flutterError(error))
+          }
         }
       },
       body: { operation, deadline in

@@ -56,19 +56,19 @@ internal class WorkspaceOperationEngine(
     val deadline = SystemClock.elapsedRealtime() + remainingMillis
     try {
       workers.execute {
-        try {
-          finish(operationId, operation, result, value = body(operation, deadline))
+        val bodyTerminal = try {
+          WorkspaceTerminalState(errorCode = null) to body(operation, deadline)
         } catch (error: Throwable) {
           val code = when {
-            operation.isCancelled() -> "cancelled"
             error is WorkspaceOperationFailure -> error.code
             error is AndroidProviderUnavailable -> "unavailable"
             error is FileNotFoundException -> "notFound"
             error is SecurityException -> "permissionLost"
             else -> "providerFailure"
           }
-          finish(operationId, operation, result, errorCode = code)
+          WorkspaceTerminalState(errorCode = code) to null
         }
+        finish(operationId, operation, result, bodyTerminal.first, bodyTerminal.second)
       }
     } catch (_: RejectedExecutionException) {
       operations.remove(operationId, operation)
@@ -96,9 +96,10 @@ internal class WorkspaceOperationEngine(
     operationId: String,
     operation: WorkspaceNativeOperation,
     result: MethodChannel.Result,
-    value: Any? = null,
-    errorCode: String? = null,
+    bodyTerminal: WorkspaceTerminalState,
+    value: Any?,
   ) {
+    val terminal = operation.captureBody(bodyTerminal.errorCode) ?: operation.terminalState() ?: return
     if (!operation.settled.compareAndSet(false, true)) return
     if (detached.get() || operation.engineGeneration != generation.get()) {
       operations.remove(operationId, operation)
@@ -108,8 +109,7 @@ internal class WorkspaceOperationEngine(
       try {
         if (detached.get() || operation.engineGeneration != generation.get()) return@post
         when {
-          operation.isCancelled() -> result.error("cancelled", null, null)
-          errorCode != null -> result.error(errorCode, null, null)
+          terminal.errorCode != null -> result.error(terminal.errorCode, null, null)
           else -> result.success(value)
         }
       } finally {

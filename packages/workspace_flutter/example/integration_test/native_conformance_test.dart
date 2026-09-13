@@ -339,50 +339,55 @@ void main() {
       },
     );
 
-    testWidgets('L01 nativeTest fixture reuses lineage IDs across concurrent lists', (
-      tester,
-    ) async {
-      const workspaceId = 'native-test-concurrent-lineage-workspace';
-      final envelope = Platform.isAndroid
-          ? androidEnvelope(
-              'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/root',
-            )
-          : iOSEnvelope(<int>[0x57, 0x53, 0x46, 0x54]);
-      final root = await channel.invokeMapMethod<Object?, Object?>(
-        'restore',
-        <String, Object?>{
-          'protocolVersion': 1,
-          'workspaceId': workspaceId,
-          'envelope': envelope,
-        },
-      );
-      final rootId = root!['entryId'] as String;
-      final pages = await Future.wait(
-        List<Future<Map<Object?, Object?>?>>.generate(8, (index) {
-          return channel.invokeMapMethod<Object?, Object?>('list', <String, Object?>{
+    testWidgets(
+      'L01 nativeTest fixture reuses lineage IDs across concurrent lists',
+      (tester) async {
+        const workspaceId = 'native-test-concurrent-lineage-workspace';
+        final envelope = Platform.isAndroid
+            ? androidEnvelope(
+                'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/root',
+              )
+            : iOSEnvelope(<int>[0x57, 0x53, 0x46, 0x54]);
+        final root = await channel.invokeMapMethod<Object?, Object?>(
+          'restore',
+          <String, Object?>{
             'protocolVersion': 1,
             'workspaceId': workspaceId,
             'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 10,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_concurrent_lineage_$index',
-            'remainingMillis': 10000,
-          });
-        }),
-      );
-      final identities = pages.map((page) {
-        return Map<String, Object?>.fromEntries(
-          (page!['entries']! as List<Object?>)
-              .cast<Map<Object?, Object?>>()
-              .map((entry) => MapEntry(entry['name']! as String, entry['entryId'])),
+          },
         );
-      }).toList();
-      for (final identity in identities.skip(1)) {
-        expect(identity, identities.first);
-      }
-    });
+        final rootId = root!['entryId'] as String;
+        final pages = await Future.wait(
+          List<Future<Map<Object?, Object?>?>>.generate(8, (index) {
+            return channel
+                .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
+                  'protocolVersion': 1,
+                  'workspaceId': workspaceId,
+                  'envelope': envelope,
+                  'directoryId': rootId,
+                  'maxEntries': 10,
+                  'maxBytes': 1024,
+                  'cursor': null,
+                  'operationId': 'native_test_concurrent_lineage_$index',
+                  'remainingMillis': 10000,
+                });
+          }),
+        );
+        final identities = pages.map((page) {
+          return Map<String, Object?>.fromEntries(
+            (page!['entries']! as List<Object?>)
+                .cast<Map<Object?, Object?>>()
+                .map(
+                  (entry) =>
+                      MapEntry(entry['name']! as String, entry['entryId']),
+                ),
+          );
+        }).toList();
+        for (final identity in identities.skip(1)) {
+          expect(identity, identities.first);
+        }
+      },
+    );
   }
 
   if (Platform.isIOS && iOSNativeFixture) {
@@ -1439,6 +1444,67 @@ void main() {
           ),
         ),
       );
+    });
+
+    testWidgets('A03 nativeTest fixture revalidates deletion and type mutation', (
+      tester,
+    ) async {
+      Future<void> expectReadFailure(
+        String rootName,
+        String expectedCode,
+      ) async {
+        final workspaceId = 'native-test-mutation-$rootName';
+        final envelope = androidEnvelope(
+          'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/$rootName',
+        );
+        final root = await channel.invokeMapMethod<Object?, Object?>(
+          'restore',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+          },
+        );
+        final page = await channel
+            .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
+              'protocolVersion': 1,
+              'workspaceId': workspaceId,
+              'envelope': envelope,
+              'directoryId': root!['entryId'],
+              'maxEntries': 1,
+              'maxBytes': 1024,
+              'cursor': null,
+              'operationId': 'native_test_mutation_list_$rootName',
+              'remainingMillis': 10000,
+            });
+        final entry =
+            (page!['entries']! as List<Object?>).single
+                as Map<Object?, Object?>;
+        await expectLater(
+          channel.invokeMethod<Object?>('read', <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'fileId': entry['entryId'],
+            'offset': 0,
+            'count': 1,
+            'maxBytes': 1,
+            'expectedRevision': null,
+            'operationId': 'native_test_mutation_read_$rootName',
+            'remainingMillis': 10000,
+          }),
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              expectedCode,
+            ),
+          ),
+        );
+      }
+
+      await expectReadFailure('deleted-after-list', 'notFound');
+      await expectReadFailure('file-to-directory', 'unsupported');
     });
 
     testWidgets('A03 nativeTest fixture maps typed provider failures', (

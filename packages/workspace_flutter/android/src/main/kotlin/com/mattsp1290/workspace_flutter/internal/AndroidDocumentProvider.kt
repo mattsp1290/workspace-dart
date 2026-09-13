@@ -1,6 +1,7 @@
 package com.mattsp1290.workspace_flutter.internal
 
 import android.content.ContentResolver
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
@@ -10,7 +11,7 @@ import java.io.Closeable
 import java.io.FileInputStream
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The only production seam that touches document-provider I/O.
@@ -58,34 +59,89 @@ interface AndroidReadHandle : Closeable {
   fun seek(position: Long)
 }
 
+/** Small framework boundary so JVM tests can inject null/failing provider I/O. */
+internal interface AndroidResolver {
+  fun query(uri: Uri, projection: Array<String>, cancellation: CancellationSignal): Cursor?
+  fun openRead(uri: Uri, cancellation: CancellationSignal): android.os.ParcelFileDescriptor?
+  fun isChildDocument(parent: Uri, candidate: Uri): Boolean
+}
+
+private class FrameworkAndroidResolver(
+  private val resolver: ContentResolver,
+) : AndroidResolver {
+  override fun query(
+    uri: Uri,
+    projection: Array<String>,
+    cancellation: CancellationSignal,
+  ): Cursor? = resolver.query(uri, projection, null, null, null, cancellation)
+
+  override fun openRead(
+    uri: Uri,
+    cancellation: CancellationSignal,
+  ): android.os.ParcelFileDescriptor? = resolver.openFileDescriptor(uri, "r", cancellation)
+
+  override fun isChildDocument(parent: Uri, candidate: Uri): Boolean =
+    DocumentsContract.isChildDocument(resolver, parent, candidate)
+}
+
 /** A provider could not serve a request, without exposing provider diagnostics. */
 class AndroidProviderUnavailable : RuntimeException()
 
 /** Counters are deliberately separate from operation registration. */
 class AndroidProviderResourceCounters {
-  private val queryCount = AtomicInteger()
-  private val readHandleCount = AtomicInteger()
+  private val activeQueryLeases = ConcurrentHashMap.newKeySet<AndroidProviderResourceLease>()
+  private val activeReadLeases = ConcurrentHashMap.newKeySet<AndroidProviderResourceLease>()
 
-  val activeQueries: Int get() = queryCount.get()
-  val activeReadHandles: Int get() = readHandleCount.get()
+  val activeQueries: Int get() = activeQueryLeases.size
+  val activeReadHandles: Int get() = activeReadLeases.size
   val activeTotal: Int get() = activeQueries + activeReadHandles
 
-  fun openedQuery() = queryCount.incrementAndGet()
-  fun closedQuery() = queryCount.decrementAndGet()
-  fun openedReadHandle() = readHandleCount.incrementAndGet()
-  fun closedReadHandle() = readHandleCount.decrementAndGet()
+  fun acquireQuery(): AndroidProviderResourceLease = acquire(activeQueryLeases)
+  fun acquireReadHandle(): AndroidProviderResourceLease = acquire(activeReadLeases)
+
+  private fun acquire(
+    active: MutableSet<AndroidProviderResourceLease>,
+  ): AndroidProviderResourceLease {
+    lateinit var lease: AndroidProviderResourceLease
+    lease = AndroidProviderResourceLease {
+      check(active.remove(lease)) { "provider resource lease was released without ownership" }
+    }
+    check(active.add(lease)) { "provider resource lease was acquired twice" }
+    return lease
+  }
+}
+
+/** Exact ownership token for one framework query or read descriptor. */
+class AndroidProviderResourceLease internal constructor(
+  private val release: () -> Unit,
+) : Closeable {
+  private val closed = AtomicBoolean(false)
+
+  override fun close() {
+    check(closed.compareAndSet(false, true)) { "provider resource lease closed twice" }
+    release()
+  }
 }
 
 internal class ContentResolverDocumentProvider(
-  private val resolver: ContentResolver,
+  private val resolver: AndroidResolver,
 ) : AndroidDocumentProvider {
+  constructor(resolver: ContentResolver) : this(FrameworkAndroidResolver(resolver))
   override val resources = AndroidProviderResourceCounters()
   override fun documentUri(tree: Uri, documentId: String): Uri =
     DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
 
   override fun isDescendant(tree: Uri, documentId: String): Boolean {
-    return AndroidDescendantPolicy.validate(Build.VERSION.SDK_INT) {
-      AndroidQDescendantCheck.isDescendant(resolver, tree, documentId)
+    return try {
+      AndroidDescendantPolicy.validate(Build.VERSION.SDK_INT) {
+        AndroidQDescendantCheck.isDescendant(resolver, tree, documentId)
+      }
+    } catch (_: SecurityException) {
+      // Providers may reject a forged candidate before answering the
+      // descendant query. That is failed proof, never alternate authority.
+      false
+    } catch (_: IllegalArgumentException) {
+      false
     }
   }
 
@@ -95,7 +151,7 @@ internal class ContentResolverDocumentProvider(
     cancellation: CancellationSignal,
     visitor: (AndroidDocumentChild) -> Boolean,
   ) {
-    resources.openedQuery()
+    val lease = resources.acquireQuery()
     try {
       val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentDocumentId)
       resolver.query(
@@ -106,9 +162,6 @@ internal class ContentResolverDocumentProvider(
           DocumentsContract.Document.COLUMN_MIME_TYPE,
           DocumentsContract.Document.COLUMN_SIZE,
         ),
-        null,
-        null,
-        null,
         cancellation,
       )?.use { cursor ->
         while (cursor.moveToNext()) {
@@ -119,38 +172,42 @@ internal class ContentResolverDocumentProvider(
         }
       } ?: throw AndroidProviderUnavailable()
     } finally {
-      resources.closedQuery()
+      lease.close()
     }
   }
 
   override fun mimeType(uri: Uri, cancellation: CancellationSignal): String? =
     run {
-      resources.openedQuery()
+      val lease = resources.acquireQuery()
       try {
         resolver.query(
           uri,
           arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
-          null,
-          null,
-          null,
           cancellation,
         )?.use { cursor ->
           if (!cursor.moveToFirst()) null else cursor.getString(0)
         } ?: throw AndroidProviderUnavailable()
       } finally {
-        resources.closedQuery()
+        lease.close()
       }
     }
 
   override fun openRead(uri: Uri, cancellation: CancellationSignal): AndroidReadHandle? {
-    val descriptor = resolver.openFileDescriptor(uri, "r", cancellation) ?: return null
-    resources.openedReadHandle()
-    return ParcelReadHandle(descriptor, resources)
+    val lease = resources.acquireReadHandle()
+    var transferred = false
+    try {
+      val descriptor = resolver.openRead(uri, cancellation) ?: return null
+      return ParcelReadHandle(descriptor, lease).also { transferred = true }
+    } finally {
+      // Ownership transfers to ParcelReadHandle only on a successful return.
+      // A failed/null descriptor must not leave an unmatched lease.
+      if (!transferred) lease.close()
+    }
   }
 
   private class ParcelReadHandle(
     private val descriptor: android.os.ParcelFileDescriptor,
-    private val resources: AndroidProviderResourceCounters,
+    private val lease: AndroidProviderResourceLease,
   ) : AndroidReadHandle {
     private val closed = AtomicBoolean(false)
     override val input: InputStream = FileInputStream(descriptor.fileDescriptor)
@@ -168,7 +225,7 @@ internal class ContentResolverDocumentProvider(
         try {
           descriptor.close()
         } finally {
-          resources.closedReadHandle()
+          lease.close()
         }
       }
     }
@@ -178,17 +235,17 @@ internal class ContentResolverDocumentProvider(
 /** Keeps the API gate independently testable without loading Q-only symbols. */
 internal object AndroidDescendantPolicy {
   fun validate(apiLevel: Int, qOrLaterProbe: () -> Boolean): Boolean =
-    if (apiLevel < Build.VERSION_CODES.Q) true else qOrLaterProbe()
+    apiLevel >= Build.VERSION_CODES.Q && qOrLaterProbe()
 }
 
 /** Isolates the API-29 framework symbol so pre-Q calls never load it. */
 @RequiresApi(Build.VERSION_CODES.Q)
 private object AndroidQDescendantCheck {
-  fun isDescendant(resolver: ContentResolver, tree: Uri, documentId: String): Boolean {
+  fun isDescendant(resolver: AndroidResolver, tree: Uri, documentId: String): Boolean {
     val rootId = DocumentsContract.getTreeDocumentId(tree)
     if (documentId == rootId) return true
     val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
     val candidate = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
-    return DocumentsContract.isChildDocument(resolver, root, candidate)
+    return resolver.isChildDocument(root, candidate)
   }
 }

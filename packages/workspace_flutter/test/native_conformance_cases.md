@@ -14,20 +14,20 @@ be included in assertion output.
 | P05 | Unknown request field through registered plugin | `invalidRequest` | no provider work |
 | P06 | Unknown `cancelWorkspace` request field through registered plugin | `invalidRequest` | no cancellation or cursor cleanup side effect |
 | A01 | Malformed envelope or unknown entry ID | `invalidReference` | no provider handle |
-| A02 | Cross-workspace, stale, forged, or escaped lineage | `invalidReference` | no provider handle |
-| A03 | Revoked root / moved provider entry | `permissionLost` or `notFound` | scopes and descriptors balanced |
-| L01 | Empty and nested directory; repeated root restoration | complete page / stable root ID | no live cursor for terminal page |
+| A02 | Cross-workspace, stale, forged, or escaped lineage | `invalidReference`, or escaped symlink omitted from listing | no provider handle |
+| A03 | Revoked root / moved/deleted provider entry / file-to-directory mutation | `permissionLost`, `notFound`, or `unsupported` | scopes and descriptors balanced |
+| L01 | Empty and nested directory; repeated root restoration across reconstructed stores | complete page / stable root and child IDs | no live cursor for terminal page |
 | L02 | Exact caps and first-entry overflow | complete or `budgetExceeded` | no unbounded allocation |
 | L03 | Snapshot overflow | `unsupported` | enumerator/cursor closed |
 | L04 | Cursor resume, replay, mismatch, expiry, close | page / `invalidCursor` | cursor single-use and deleted |
 | R01 | Zero, exact, short, and past-EOF range | bounded read | handle closed |
 | R02 | Large offset, directory file ID, non-seekable source | `invalidRequest` / `unsupported` | handle closed |
 | P08 | Cyclic, malformed, or root-mismatched private lineage | `invalidReference` | no provider work |
-| P11 | Provider-resource cleanup: non-seekable range positioning and scope acquisition | bounded read / `unsupported` / `permissionLost` | streams, descriptors, and started security scopes closed exactly once |
+| P11 | Provider-resource cleanup: non-seekable range positioning, null query/descriptor, and scope acquisition | bounded read / `unsupported` / `permissionLost` / `unavailable` | streams, descriptors, and started security scopes closed exactly once |
 | R03 | Expected revision and partial provider failure | unverified read / typed failure | handle closed |
-| C01 | Cancellation at each provider boundary | `cancelled` exactly once | operations reach zero |
+| C01 | Cancellation before body terminal; cancellation after captured body terminal | `cancelled` exactly once; captured body terminal unchanged | operations reach zero |
 | C02 | Deadline expiry and duplicate operation ID | `budgetExceeded` / `invalidRequest` | operations reach zero |
-| C03 | Concurrent workspaces, close, forget, reconciliation, detach | isolated typed result | close waits for matching cleanup |
+| C03 | Concurrent workspaces, close-before-body, forget, reconciliation, detach after capture | isolated typed result; `closed` before body; detach fences delivery | close waits for matching cleanup |
 | S01 | Seeded URI/bookmark/lineage/content marker | absent from errors and stringification | n/a |
 
 Automated coverage includes Dart facade checks; Kotlin and Swift protocol and
@@ -43,7 +43,8 @@ registered handler and verifies single-use cursor resume/replay and expiry rejec
 (L04), first-entry budget overflow (L02), post-close access rejection (C03),
 and A03 permission-lost/not-found failures, with its fixture compiled only
 under `WORKSPACE_NATIVE_TEST_FIXTURE`.
-Kotlin and Swift engine suites additionally prove detach generation-fencing:
+Kotlin and Swift engine/registry suites additionally prove first-terminal
+arbitration (cancel/close cannot rewrite a captured provider terminal) and detach generation-fencing:
 late callbacks cannot reply and a replacement engine can run. The linked iOS
 XCTest host also holds a live plugin operation through detach, asserts scope
 cleanup and reply fencing, then invokes a replacement plugin. Both registered
@@ -60,6 +61,16 @@ content-resolver provider against a controlled `DocumentsProvider`; its
 registered Android fixture covers L02/L04 and maps A03
 permission-lost/not-found/unavailable/provider-failure terminals. The iOS
 registered fixture covers the same A03 terminal vocabulary.
+Kotlin JVM resolver-seam tests also verify null cursor and null descriptor
+responses fail closed at the provider boundary without leaving query/read
+leases; the channel handler maps the resulting unavailable read outcome.
+The linked iOS XCTest host additionally verifies an external-target symlink is
+omitted and that explicit deletion and file-to-directory mutation after listing
+are revalidated before read. It also reconstructs the plugin with a fresh
+store/provider and reopens a saved child ID without relisting, and drives a
+cooperative deadline beyond `remainingMillis` before the next native check.
+The Android registered nativeTest fixture verifies the same post-list
+`notFound` and `unsupported` terminals.
 Provider-fault and lifecycle rows are covered by the native and
 registered-handler suites above; these synthetic fixtures do not qualify
 physical providers or devices.

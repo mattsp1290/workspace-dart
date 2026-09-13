@@ -12,7 +12,9 @@ apply plugin: 'kotlin-android'
 
 android { namespace 'com.mattsp1290.workspace_flutter'; compileSdk 35
     defaultConfig {
-        minSdk 24
+        // API 29 is the first release with the framework descendant proof we
+        // require before a stored document lineage may be opened.
+        minSdk 29
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions {

@@ -3,6 +3,10 @@ package com.mattsp1290.workspace_flutter.internal
 import android.os.CancellationSignal
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+
+/** The first transition is authoritative; platform cancellation stays cooperative. */
+internal data class WorkspaceTerminalState(val errorCode: String?)
 
 /** Engine-owned cancellation and cleanup identity for one native operation. */
 internal class WorkspaceNativeOperation(
@@ -13,9 +17,28 @@ internal class WorkspaceNativeOperation(
 ) {
   val settled = AtomicBoolean(false)
   private val cancellationRequested = AtomicBoolean(false)
+  private val terminal = AtomicReference<WorkspaceTerminalState?>(null)
 
   fun cancel() {
+    claimTerminal("cancelled")
     if (cancellationRequested.compareAndSet(false, true)) requestPlatformCancellation()
+  }
+
+  fun close() {
+    claimTerminal("closed")
+    if (cancellationRequested.compareAndSet(false, true)) requestPlatformCancellation()
+  }
+
+  /** Captures a provider result only when no earlier terminal event won. */
+  fun captureBody(errorCode: String?): WorkspaceTerminalState? {
+    val captured = WorkspaceTerminalState(errorCode)
+    return if (terminal.compareAndSet(null, captured)) captured else null
+  }
+
+  fun terminalState(): WorkspaceTerminalState? = terminal.get()
+
+  private fun claimTerminal(errorCode: String) {
+    terminal.compareAndSet(null, WorkspaceTerminalState(errorCode))
   }
 
   /** The engine only exposes this signal to providers; it owns cancellation. */
@@ -62,7 +85,7 @@ internal class WorkspaceOperationRegistry(
   /** Prevents new work before requesting cancellation of existing work. */
   fun closeWorkspace(workspaceId: String) {
     closingWorkspaces.add(workspaceId)
-    active.values.filter { it.workspaceId == workspaceId }.forEach { it.cancel() }
+    active.values.filter { it.workspaceId == workspaceId }.forEach { it.close() }
   }
 
   fun isWorkspaceClosing(workspaceId: String): Boolean = workspaceId in closingWorkspaces

@@ -31,12 +31,13 @@ internal final class WorkspaceOperationEngine {
 
     let deadline = ProcessInfo.processInfo.systemUptime + Double(remainingMillis) / 1000.0
     DispatchQueue.global(qos: .userInitiated).async {
-      let terminal: Result<Any, Error>
+      let bodyTerminal: Result<Any, Error>
       do {
-        terminal = .success(try body(operation, deadline))
+        bodyTerminal = .success(try body(operation, deadline))
       } catch {
-        terminal = .failure(error)
+        bodyTerminal = .failure(error)
       }
+      let terminal = operation.captureBody(bodyTerminal)
       DispatchQueue.main.async {
         defer { self.registry.remove(operationId) }
         guard self.canSettle(operation) else { return }

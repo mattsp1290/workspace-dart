@@ -2,6 +2,32 @@ import XCTest
 @testable import WorkspaceFlutterNative
 
 final class WorkspaceOperationRegistryTests: XCTestCase {
+  func testC01CapturedBodyTerminalIsNotReplacedByLateCancellation() {
+    let operation = WorkspaceNativeOperation(workspaceId: "workspace", engineGeneration: 1)
+    let captured = operation.captureBody(.success("complete"))
+    operation.cancel()
+    let observed = operation.captureBody(.failure(WorkspaceTerminalFailure.cancelled))
+
+    guard case let .success(value) = captured,
+          case let .success(observedValue) = observed else {
+      return XCTFail("captured body terminal must remain authoritative")
+    }
+    XCTAssertEqual(value as? String, "complete")
+    XCTAssertEqual(observedValue as? String, "complete")
+  }
+
+  func testC03CloseWinsBeforeProviderCompletion() {
+    let operation = WorkspaceNativeOperation(workspaceId: "workspace", engineGeneration: 1)
+    operation.close()
+    let observed = operation.captureBody(.success("complete"))
+
+    guard case let .failure(error) = observed,
+          let terminal = error as? WorkspaceTerminalFailure else {
+      return XCTFail("close must capture the first terminal")
+    }
+    XCTAssertEqual(terminal.code, "closed")
+  }
+
   func testC02RejectsDuplicateOperationIDsWithoutReplacingLiveWork() {
     let registry = WorkspaceOperationRegistry()
     let first = registry.register(operationId: "operation", workspaceId: "one", engineGeneration: 1)

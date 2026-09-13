@@ -12,12 +12,12 @@ final class WorkspaceOperationEngineTests: XCTestCase {
       operationId: "cancelled-operation",
       workspaceId: "workspace",
       remainingMillis: 1_000,
-      settle: { operation, terminal in
-        XCTAssertTrue(operation.isCancelled())
-        guard case let .success(value) = terminal else {
-          return XCTFail("body should complete; the handler maps the cancelled operation")
+      settle: { _, terminal in
+        guard case let .failure(error) = terminal,
+              let terminalFailure = error as? WorkspaceTerminalFailure else {
+          return XCTFail("the first cancellation terminal must win")
         }
-        XCTAssertEqual(value as? String, "complete")
+        XCTAssertEqual(terminalFailure.code, "cancelled")
         settled.fulfill()
       },
       body: { _, _ in

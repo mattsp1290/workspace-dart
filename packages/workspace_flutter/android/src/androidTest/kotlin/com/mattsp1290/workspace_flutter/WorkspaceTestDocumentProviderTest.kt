@@ -5,7 +5,9 @@ import com.mattsp1290.workspace_flutter.internal.ContentResolverDocumentProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -57,6 +59,58 @@ class WorkspaceTestDocumentProviderTest {
         it.input.readBytes().decodeToString(),
       )
     }
+    assertEquals(0, provider.resources.activeTotal)
+  }
+
+  @Test
+  fun productionProviderClosesTheQueryAfterAnEarlyVisitorExit() {
+    val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+    val provider = ContentResolverDocumentProvider(resolver)
+    val tree = DocumentsContract.buildTreeDocumentUri(
+      WorkspaceTestDocumentProvider.AUTHORITY,
+      WorkspaceTestDocumentProvider.ROOT_ID,
+    )
+
+    provider.forEachChild(tree, WorkspaceTestDocumentProvider.ROOT_ID, android.os.CancellationSignal()) {
+      false
+    }
+
+    assertEquals(0, provider.resources.activeQueries)
+    assertEquals(0, provider.resources.activeTotal)
+  }
+
+  @Test
+  fun productionProviderClosesTheQueryWhenTheVisitorThrows() {
+    val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+    val provider = ContentResolverDocumentProvider(resolver)
+    val tree = DocumentsContract.buildTreeDocumentUri(
+      WorkspaceTestDocumentProvider.AUTHORITY,
+      WorkspaceTestDocumentProvider.ROOT_ID,
+    )
+
+    try {
+      provider.forEachChild(tree, WorkspaceTestDocumentProvider.ROOT_ID, android.os.CancellationSignal()) {
+        throw IllegalStateException("controlled visitor failure")
+      }
+      fail("expected visitor failure")
+    } catch (_: IllegalStateException) {
+      // The exact fault is irrelevant; only structured cleanup matters here.
+    }
+
+    assertEquals(0, provider.resources.activeQueries)
+    assertEquals(0, provider.resources.activeTotal)
+  }
+
+  @Test
+  fun productionProviderRejectsAControlledNonDescendantBeforeRead() {
+    val resolver = ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+    val provider = ContentResolverDocumentProvider(resolver)
+    val tree = DocumentsContract.buildTreeDocumentUri(
+      WorkspaceTestDocumentProvider.AUTHORITY,
+      WorkspaceTestDocumentProvider.ROOT_ID,
+    )
+
+    assertFalse(provider.isDescendant(tree, "outside-root"))
     assertEquals(0, provider.resources.activeTotal)
   }
 }

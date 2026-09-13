@@ -10,6 +10,23 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class WorkspaceOperationRegistryTest {
+  @Test fun `C01 captured body terminal is not replaced by a late cancellation`() {
+    val operation = WorkspaceNativeOperation("workspace", 1, requestPlatformCancellation = {})
+
+    assertEquals(null, operation.captureBody(null)?.errorCode)
+    operation.cancel()
+
+    assertEquals(null, operation.terminalState()?.errorCode)
+  }
+
+  @Test fun `C03 close wins before provider completion`() {
+    val operation = WorkspaceNativeOperation("workspace", 1, requestPlatformCancellation = {})
+
+    operation.close()
+    assertEquals(null, operation.captureBody(null))
+    assertEquals("closed", operation.terminalState()?.errorCode)
+  }
+
   @Test fun `C02 rejects duplicate operation ids without replacing the live operation`() {
     val registry = WorkspaceOperationRegistry()
     val first = registry.register("operation", "one", 1)

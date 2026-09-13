@@ -301,6 +301,172 @@ final class RunnerTests: XCTestCase {
     XCTAssertEqual(provider.stopped, 2)
   }
 
+  func testA03RevalidatesDeletionAndFileToDirectoryMutationAfterListing() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("workspace-flutter-runner-mutation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let deleted = root.appendingPathComponent("deleted.txt")
+    try Data("fixture".utf8).write(to: deleted)
+    let provider = LocalFixtureBookmarkProvider(root: root)
+    let suite = "workspace-flutter-runner-mutation-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let plugin = WorkspaceFlutterPlugin(
+      bookmarkProvider: provider, workspaceStore: UserDefaultsIOSWorkspaceStore(defaults: defaults)
+    )
+    let envelope = fixtureEnvelope(root: root)
+    let workspaceId = "mutation-workspace"
+    let restored = try invoke(plugin, method: "restore", arguments: [
+      "protocolVersion": 1, "workspaceId": workspaceId, "envelope": envelope,
+    ]) as! [String: Any]
+    let rootID = try XCTUnwrap(restored["entryId"] as? String)
+
+    func list(operation: String) throws -> [[String: Any]] {
+      let page = try invoke(plugin, method: "list", arguments: [
+        "protocolVersion": 1, "workspaceId": workspaceId, "envelope": envelope,
+        "directoryId": rootID, "maxEntries": 10, "maxBytes": 1024, "cursor": NSNull(),
+        "operationId": operation, "remainingMillis": 10_000,
+      ]) as! [String: Any]
+      return try XCTUnwrap(page["entries"] as? [[String: Any]])
+    }
+    func read(_ id: String, operation: String) throws {
+      _ = try invoke(plugin, method: "read", arguments: [
+        "protocolVersion": 1, "workspaceId": workspaceId, "envelope": envelope,
+        "fileId": id, "offset": 0, "count": 1, "maxBytes": 1, "expectedRevision": NSNull(),
+        "operationId": operation, "remainingMillis": 10_000,
+      ])
+    }
+
+    let deletedID = try XCTUnwrap(list(operation: "mutation-delete-list").first?["entryId"] as? String)
+    try FileManager.default.removeItem(at: deleted)
+    assertFlutterError("notFound") { try read(deletedID, operation: "mutation-delete-read") }
+
+    let changed = root.appendingPathComponent("changed.txt")
+    try Data("fixture".utf8).write(to: changed)
+    let changedID = try XCTUnwrap(
+      list(operation: "mutation-type-list").first(where: { $0["name"] as? String == "changed.txt" })?["entryId"] as? String
+    )
+    try FileManager.default.removeItem(at: changed)
+    try FileManager.default.createDirectory(at: changed, withIntermediateDirectories: false)
+    assertFlutterError("unsupported") { try read(changedID, operation: "mutation-type-read") }
+    XCTAssertEqual(provider.started, provider.stopped)
+  }
+
+  func testL01RestoresStableRootAndChildIDsFromAReconstructedStore() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("workspace-flutter-runner-restart-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("fixture".utf8).write(to: root.appendingPathComponent("entry.txt"))
+    let suite = "workspace-flutter-runner-restart-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let envelope = fixtureEnvelope(root: root)
+    let workspaceID = "restart-workspace"
+    let firstProvider = LocalFixtureBookmarkProvider(root: root)
+    let first = WorkspaceFlutterPlugin(
+      bookmarkProvider: firstProvider,
+      workspaceStore: UserDefaultsIOSWorkspaceStore(defaults: defaults)
+    )
+    let firstRoot = try invoke(first, method: "restore", arguments: [
+      "protocolVersion": 1, "workspaceId": workspaceID, "envelope": envelope,
+    ]) as! [String: Any]
+    let rootID = try XCTUnwrap(firstRoot["entryId"] as? String)
+    let page = try invoke(first, method: "list", arguments: [
+      "protocolVersion": 1, "workspaceId": workspaceID, "envelope": envelope,
+      "directoryId": rootID, "maxEntries": 10, "maxBytes": 1024, "cursor": NSNull(),
+      "operationId": "restart-list", "remainingMillis": 10_000,
+    ]) as! [String: Any]
+    let childID = try XCTUnwrap((page["entries"] as? [[String: Any]])?.first?["entryId"] as? String)
+    XCTAssertEqual(firstProvider.started, firstProvider.stopped)
+
+    // This mimics process reconstruction: neither the store nor provider is
+    // reused, and the child is reopened without listing by name again.
+    let secondProvider = LocalFixtureBookmarkProvider(root: root)
+    let second = WorkspaceFlutterPlugin(
+      bookmarkProvider: secondProvider,
+      workspaceStore: UserDefaultsIOSWorkspaceStore(defaults: defaults)
+    )
+    let secondRoot = try invoke(second, method: "restore", arguments: [
+      "protocolVersion": 1, "workspaceId": workspaceID, "envelope": envelope,
+    ]) as! [String: Any]
+    XCTAssertEqual(secondRoot["entryId"] as? String, rootID)
+    let read = try invoke(second, method: "read", arguments: [
+      "protocolVersion": 1, "workspaceId": workspaceID, "envelope": envelope,
+      "fileId": childID, "offset": 0, "count": 64, "maxBytes": 64, "expectedRevision": NSNull(),
+      "operationId": "restart-read", "remainingMillis": 10_000,
+    ]) as! [String: Any]
+    XCTAssertEqual(
+      String(data: try XCTUnwrap((read["bytes"] as? FlutterStandardTypedData)?.data), encoding: .utf8),
+      "fixture"
+    )
+    XCTAssertEqual(secondProvider.started, secondProvider.stopped)
+  }
+
+  func testC02CooperativeDeadlineExpiresAfterProviderWorkAndBalancesScope() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("workspace-flutter-runner-deadline-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("fixture".utf8).write(to: root.appendingPathComponent("entry.txt"))
+    let provider = DeadlineFixtureBookmarkProvider(root: root)
+    let suite = "workspace-flutter-runner-deadline-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let plugin = WorkspaceFlutterPlugin(
+      bookmarkProvider: provider, workspaceStore: UserDefaultsIOSWorkspaceStore(defaults: defaults)
+    )
+    let envelope = fixtureEnvelope(root: root)
+    let restored = try invoke(plugin, method: "restore", arguments: [
+      "protocolVersion": 1, "workspaceId": "deadline-workspace", "envelope": envelope,
+    ]) as! [String: Any]
+    assertFlutterError("budgetExceeded") {
+      try invoke(plugin, method: "list", arguments: [
+        "protocolVersion": 1, "workspaceId": "deadline-workspace", "envelope": envelope,
+        "directoryId": try XCTUnwrap(restored["entryId"] as? String),
+        "maxEntries": 10, "maxBytes": 1024, "cursor": NSNull(),
+        "operationId": "deadline-list", "remainingMillis": 1,
+      ])
+    }
+    XCTAssertEqual(provider.started, provider.stopped)
+  }
+
+  func testA02OmitsAnInRootSymlinkToAnExternalTarget() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("workspace-flutter-runner-symlink-\(UUID().uuidString)", isDirectory: true)
+    let external = FileManager.default.temporaryDirectory
+      .appendingPathComponent("workspace-flutter-external-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try Data("external".utf8).write(to: external)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: external)
+    }
+    try FileManager.default.createSymbolicLink(
+      at: root.appendingPathComponent("escape.txt"), withDestinationURL: external
+    )
+    let provider = LocalFixtureBookmarkProvider(root: root)
+    let suite = "workspace-flutter-runner-symlink-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let plugin = WorkspaceFlutterPlugin(
+      bookmarkProvider: provider, workspaceStore: UserDefaultsIOSWorkspaceStore(defaults: defaults)
+    )
+    let envelope = fixtureEnvelope(root: root)
+    let restored = try invoke(plugin, method: "restore", arguments: [
+      "protocolVersion": 1, "workspaceId": "symlink-workspace", "envelope": envelope,
+    ]) as! [String: Any]
+    let page = try invoke(plugin, method: "list", arguments: [
+      "protocolVersion": 1, "workspaceId": "symlink-workspace", "envelope": envelope,
+      "directoryId": try XCTUnwrap(restored["entryId"] as? String),
+      "maxEntries": 10, "maxBytes": 1024, "cursor": NSNull(),
+      "operationId": "symlink-list", "remainingMillis": 10_000,
+    ]) as! [String: Any]
+    XCTAssertTrue(try XCTUnwrap(page["entries"] as? [[String: Any]]).isEmpty)
+    XCTAssertEqual(provider.started, provider.stopped)
+  }
+
   func testS01PublicErrorsContainOnlyTheWireFailure() {
     let marker = "workspace-private-marker"
     let root = URL(fileURLWithPath: "/tmp/\(marker)", isDirectory: true)
@@ -408,6 +574,31 @@ private final class LocalFixtureBookmarkProvider: IOSBookmarkProvider {
 
   func stopAccessing(_: URL) {
     stopped += 1
+  }
+}
+
+private final class DeadlineFixtureBookmarkProvider: IOSBookmarkProvider {
+  let root: URL
+  private(set) var started = 0
+  private(set) var stopped = 0
+
+  init(root: URL) { self.root = root }
+
+  func resolve(_: Data) throws -> IOSResolvedBookmark {
+    IOSResolvedBookmark(root: root, isStale: false)
+  }
+
+  func startAccessing(_: URL) -> Bool {
+    started += 1
+    return true
+  }
+
+  func stopAccessing(_: URL) { stopped += 1 }
+
+  func beforeList(_: URL, isCancelled _: () -> Bool) throws {
+    // The operation remains responsive at the next native deadline check; the
+    // provider itself is not claimed to be forcibly interrupted.
+    Thread.sleep(forTimeInterval: 0.02)
   }
 }
 

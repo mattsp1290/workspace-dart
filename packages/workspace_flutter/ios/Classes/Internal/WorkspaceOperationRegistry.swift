@@ -1,5 +1,18 @@
 import Foundation
 
+/// A wire-safe terminal selected before main-queue delivery.
+internal enum WorkspaceTerminalFailure: Error {
+  case cancelled
+  case closed
+
+  var code: String {
+    switch self {
+    case .cancelled: return "cancelled"
+    case .closed: return "closed"
+    }
+  }
+}
+
 /// Engine-owned operation state. The coordinator stays alive until the caller
 /// removes this operation after provider cleanup, not merely after a Flutter
 /// result has been queued.
@@ -9,6 +22,7 @@ internal final class WorkspaceNativeOperation {
   let coordinator = NSFileCoordinator()
   private let lock = NSLock()
   private var cancelled = false
+  private var terminal: Result<Any, Error>?
 
   init(workspaceId: String, engineGeneration: Int) {
     self.workspaceId = workspaceId
@@ -18,8 +32,25 @@ internal final class WorkspaceNativeOperation {
   func cancel() {
     lock.lock()
     cancelled = true
+    if terminal == nil { terminal = .failure(WorkspaceTerminalFailure.cancelled) }
     lock.unlock()
     coordinator.cancel()
+  }
+
+  func close() {
+    lock.lock()
+    cancelled = true
+    if terminal == nil { terminal = .failure(WorkspaceTerminalFailure.closed) }
+    lock.unlock()
+    coordinator.cancel()
+  }
+
+  /// Captures the provider outcome only when no earlier terminal event won.
+  func captureBody(_ bodyTerminal: Result<Any, Error>) -> Result<Any, Error> {
+    lock.lock()
+    defer { lock.unlock() }
+    if terminal == nil { terminal = bodyTerminal }
+    return terminal!
   }
 
   func isCancelled() -> Bool {
@@ -69,7 +100,7 @@ internal final class WorkspaceOperationRegistry {
     closingWorkspaces.insert(workspaceId)
     let matching = active.values.filter { $0.workspaceId == workspaceId }
     cleanupCondition.unlock()
-    matching.forEach { $0.cancel() }
+    matching.forEach { $0.close() }
   }
 
   func isWorkspaceClosing(_ workspaceId: String) -> Bool {

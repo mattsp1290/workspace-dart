@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import com.mattsp1290.workspace_flutter.internal.AndroidDocumentChild
 import com.mattsp1290.workspace_flutter.internal.AndroidDocumentProvider
 import com.mattsp1290.workspace_flutter.internal.AndroidProviderResourceCounters
+import com.mattsp1290.workspace_flutter.internal.AndroidProviderResourceLease
 import com.mattsp1290.workspace_flutter.internal.AndroidReadHandle
 import com.mattsp1290.workspace_flutter.internal.AndroidProviderUnavailable
 import java.io.ByteArrayInputStream
@@ -33,6 +34,10 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
             deadlineRootId,
             blockedReadRootId,
             blockedReadFileId,
+            deletedRootId,
+            deletedFileId,
+            changedTypeRootId,
+            changedTypeFileId,
         )
 
     override fun forEachChild(
@@ -61,21 +66,36 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
             visitor(AndroidDocumentChild(blockedReadFileId, "blocked.txt", "text/plain", contents.size.toLong()))
             return
         }
+        if (parentDocumentId == deletedRootId) {
+            // The listed opaque ID remains resolvable, but its provider entry
+            // disappears before the next use-time MIME validation.
+            visitor(AndroidDocumentChild(deletedFileId, "deleted.txt", "text/plain", contents.size.toLong()))
+            return
+        }
+        if (parentDocumentId == changedTypeRootId) {
+            // This models a provider changing a listed file into a directory
+            // before the read operation validates its current type.
+            visitor(AndroidDocumentChild(changedTypeFileId, "changed.txt", "text/plain", contents.size.toLong()))
+            return
+        }
         require(parentDocumentId == rootId)
-        resources.openedQuery()
+        val lease = resources.acquireQuery()
         try {
             if (!visitor(AndroidDocumentChild(fileId, "fixture.txt", "text/plain", contents.size.toLong()))) {
                 return
             }
             visitor(AndroidDocumentChild(nextFileId, "next.txt", "text/plain", nextContents.size.toLong()))
         } finally {
-            resources.closedQuery()
+            lease.close()
         }
     }
 
     override fun mimeType(uri: Uri, cancellation: CancellationSignal): String? = when {
         uri.pathSegments.lastOrNull() == rootId -> DocumentsContract.Document.MIME_TYPE_DIR
         uri.pathSegments.lastOrNull() == blockedReadRootId -> DocumentsContract.Document.MIME_TYPE_DIR
+        uri.pathSegments.lastOrNull() == deletedRootId -> DocumentsContract.Document.MIME_TYPE_DIR
+        uri.pathSegments.lastOrNull() == changedTypeRootId -> DocumentsContract.Document.MIME_TYPE_DIR
+        uri.pathSegments.lastOrNull() == changedTypeFileId -> DocumentsContract.Document.MIME_TYPE_DIR
         uri.toString().endsWith(fileId) -> "text/plain"
         else -> null
     }
@@ -86,19 +106,15 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
             throw java.util.concurrent.CancellationException("fixture read cancelled")
         }
         if (!uri.toString().endsWith(fileId)) return null
-        return FixtureReadHandle(contents, resources)
+        return FixtureReadHandle(contents, resources.acquireReadHandle())
     }
 
     private class FixtureReadHandle(
         private val bytes: ByteArray,
-        private val counters: AndroidProviderResourceCounters,
+        private val lease: AndroidProviderResourceLease,
     ) : AndroidReadHandle {
         private var stream = ByteArrayInputStream(bytes)
         private var closed = false
-
-        init {
-            counters.openedReadHandle()
-        }
 
         override val input: InputStream get() = stream
         override val statSize: Long get() = bytes.size.toLong()
@@ -110,10 +126,10 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
         }
 
         override fun close() {
-            if (closed) return
+            check(!closed) { "fixture read handle closed twice" }
             closed = true
             stream.close()
-            counters.closedReadHandle()
+            lease.close()
         }
     }
 
@@ -129,6 +145,10 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
         const val deadlineRootId = "deadline"
         const val blockedReadRootId = "blocked-read"
         const val blockedReadFileId = "blocked.txt"
+        const val deletedRootId = "deleted-after-list"
+        const val deletedFileId = "deleted.txt"
+        const val changedTypeRootId = "file-to-directory"
+        const val changedTypeFileId = "changed.txt"
         val contents = "native test fixture".encodeToByteArray()
         val nextContents = "native test cursor fixture".encodeToByteArray()
     }
