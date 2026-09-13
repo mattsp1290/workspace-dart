@@ -3,12 +3,16 @@ description: Flutter facade placeholder for capability-bounded workspace access.
 version: 0.1.0
 publish_to: none
 environment:
-  sdk: ^3.5.0
+  sdk: ^3.6.0
 dependencies:
+  crypto: ^3.0.3
   flutter:
     sdk: flutter
   workspace:
     path: ../workspace
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
 flutter:
   plugin:
     platforms:

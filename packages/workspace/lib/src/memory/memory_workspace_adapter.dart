@@ -36,9 +36,9 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
   int _nextCursor = 0;
   String get rootToken => _tokenFor(root, '');
   String _tokenFor(MemoryNode node, String path) {
-    final token = sha256.convert('$path/${node.name}'.codeUnits).toString();
-    _nodes[token] = node;
-    return token;
+    final stableId = sha256.convert('$path/${node.name}'.codeUnits).toString();
+    _nodes[stableId] = node;
+    return stableId;
   }
 
   bool _isSafeName(String name) {
@@ -64,7 +64,8 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
     if (!_isSafeName(root.name))
       return const WorkspaceFailure(WorkspaceFailureKind.invalidRequest);
     return WorkspaceSuccess(WorkspaceDirectory(
-        ref: WorkspaceEntryRef(workspaceId: workspaceId, token: rootToken),
+        ref: WorkspaceEntryRef.issued(
+            workspaceId: workspaceId, stableId: rootToken),
         displayPath: WorkspaceDisplayPath(root.name),
         name: root.name));
   }
@@ -83,8 +84,8 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
     if (request.cursor != null && request.cursor!.workspaceId != workspaceId)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidCursor);
-    final node = _nodes[request.directory.token] ??
-        (request.directory.token == rootToken ? root : null);
+    final node = _nodes[request.directory.stableId] ??
+        (request.directory.stableId == rootToken ? root : null);
     if (node is! MemoryDirectoryNode)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
     final priorUsage = request.cursor == null
@@ -131,8 +132,9 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
             usage:
                 priorUsage.add(entries: entries.length, bytes: metadataBytes)));
       }
-      final token = _tokenFor(child, request.directory.token);
-      final ref = WorkspaceEntryRef(workspaceId: workspaceId, token: token);
+      final token = _tokenFor(child, request.directory.stableId);
+      final ref =
+          WorkspaceEntryRef.issued(workspaceId: workspaceId, stableId: token);
       final display = WorkspaceDisplayPath(child.name);
       entries.add(child is MemoryFileNode
           ? WorkspaceFile(
@@ -146,7 +148,7 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
       if (entries.length == pageSize && i + 1 < node.children.length) {
         final cursor = 'cursor-${_nextCursor++}';
         _cursors[cursor] = _CursorState(
-            directoryToken: request.directory.token,
+            directoryToken: request.directory.stableId,
             nextIndex: i + 1,
             budget: request.budget,
             usage:
@@ -172,7 +174,7 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
       WorkspacePageCursor cursor, WorkspaceListRequest request) {
     final state = _cursors[cursor.token];
     if (state == null ||
-        state.directoryToken != request.directory.token ||
+        state.directoryToken != request.directory.stableId ||
         state.budget.maxEntries != request.budget.maxEntries ||
         state.budget.maxBytes != request.budget.maxBytes ||
         state.budget.deadline != request.budget.deadline) return null;
@@ -191,7 +193,7 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
     if (request.workspaceId != workspaceId ||
         request.file.workspaceId != workspaceId)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
-    final node = _nodes[request.file.token];
+    final node = _nodes[request.file.stableId];
     if (node is! MemoryFileNode)
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
     if (request.range.count > request.budget.maxBytes)
@@ -199,11 +201,15 @@ final class MemoryWorkspaceAdapter implements WorkspaceAdapter {
     final start = request.range.offset.clamp(0, node.bytes.length);
     final end = (start + request.range.count).clamp(start, node.bytes.length);
     final bytes = Uint8List.fromList(node.bytes.sublist(start, end));
-    final revision = ContentRevision(sha256.convert(node.bytes).toString());
-    final stability =
-        request.expectedRevision != null && request.expectedRevision != revision
-            ? RevisionStability.changed
-            : RevisionStability.verified;
+    final revision = WholeContentSha256(sha256.convert(node.bytes).toString());
+    final expected = request.expectedRevision;
+    final stability = expected == null
+        ? RevisionStability.verified
+        : !expected.isComparableTo(revision)
+            ? RevisionStability.unverified
+            : expected != revision
+                ? RevisionStability.changed
+                : RevisionStability.verified;
     return WorkspaceSuccess(WorkspaceRead(
         bytes: bytes,
         offset: start,

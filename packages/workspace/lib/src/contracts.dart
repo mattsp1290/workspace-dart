@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'identities.dart';
@@ -11,8 +12,35 @@ enum RevisionStability { verified, changed, unverified }
 
 final class CancellationToken {
   bool _cancelled = false;
+  final Set<void Function()> _listeners = <void Function()>{};
   bool get isCancelled => _cancelled;
-  void cancel() => _cancelled = true;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    final listeners = _listeners.toList(growable: false);
+    _listeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
+  }
+
+  /// Registers a callback and returns an idempotent unregister function.
+  ///
+  /// If cancellation already happened, [listener] runs synchronously.
+  void Function() register(void Function() listener) {
+    if (_cancelled) {
+      listener();
+      return () {};
+    }
+    _listeners.add(listener);
+    var registered = true;
+    return () {
+      if (!registered) return;
+      registered = false;
+      _listeners.remove(listener);
+    };
+  }
 }
 
 final class OperationBudget {
@@ -68,14 +96,65 @@ final class WorkspaceDirectory extends WorkspaceEntry {
       {required super.ref, required super.displayPath, required super.name});
 }
 
-final class ContentRevision {
-  const ContentRevision(this.value);
+sealed class ContentRevision {
+  const ContentRevision();
+
+  bool isComparableTo(ContentRevision other) =>
+      runtimeType == other.runtimeType;
+}
+
+final class WholeContentSha256 extends ContentRevision {
+  WholeContentSha256(String value) : value = _sha256(value);
   final String value;
   @override
   bool operator ==(Object other) =>
-      other is ContentRevision && other.value == value;
+      other is WholeContentSha256 && other.value == value;
   @override
   int get hashCode => value.hashCode;
+}
+
+final class PlatformContentRevision extends ContentRevision {
+  PlatformContentRevision({required String namespace, required String value})
+      : namespace = _revisionNamespace(namespace),
+        value = _revisionValue(value);
+  final String namespace;
+  final String value;
+
+  @override
+  bool isComparableTo(ContentRevision other) =>
+      other is PlatformContentRevision && other.namespace == namespace;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlatformContentRevision &&
+      other.namespace == namespace &&
+      other.value == value;
+  @override
+  int get hashCode => Object.hash(namespace, value);
+}
+
+String _sha256(String value) {
+  if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(value)) {
+    throw const FormatException('Invalid SHA-256 revision.');
+  }
+  return value;
+}
+
+String _revisionValue(String value) {
+  if (value.isEmpty ||
+      value.length > 4096 ||
+      utf8.encode(value).length > 4096 ||
+      value.contains('\u0000')) {
+    throw const FormatException('Invalid platform revision.');
+  }
+  return value;
+}
+
+String _revisionNamespace(String value) {
+  if (!RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(value)) {
+    throw const FormatException('Invalid platform revision namespace.');
+  }
+  return value;
 }
 
 final class ByteRange {
@@ -144,7 +223,7 @@ final class WorkspaceRead {
   final int offset;
   final bool eof;
   final String sliceSha256;
-  final ContentRevision actualRevision;
+  final ContentRevision? actualRevision;
   final ContentRevision? expectedRevision;
   final RevisionStability stability;
   final BudgetUsage usage;
@@ -157,10 +236,6 @@ sealed class WorkspaceOutcome<T> {
 final class WorkspaceSuccess<T> extends WorkspaceOutcome<T> {
   const WorkspaceSuccess(this.value);
   final T value;
-}
-
-final class WorkspaceEmpty<T> extends WorkspaceOutcome<T> {
-  const WorkspaceEmpty();
 }
 
 final class WorkspaceFailure<T> extends WorkspaceOutcome<T> {

@@ -10,6 +10,27 @@ OperationBudget budget({int entries = 10, int bytes = 1024}) => OperationBudget(
     );
 
 void main() {
+  test('platform revision values follow the native v1 byte limits', () {
+    expect(
+      PlatformContentRevision(
+        namespace: 'provider_1',
+        value: List<String>.filled(4096, 'a').join(),
+      ).value.length,
+      4096,
+    );
+    expect(
+      () => PlatformContentRevision(namespace: 'bad namespace', value: 'v'),
+      throwsFormatException,
+    );
+    expect(
+      () => PlatformContentRevision(
+        namespace: 'provider',
+        value: List<String>.filled(4097, 'a').join(),
+      ),
+      throwsFormatException,
+    );
+  });
+
   final id = WorkspaceId('test-workspace');
   late MemoryWorkspaceAdapter adapter;
   late WorkspaceEntryRef root;
@@ -20,7 +41,8 @@ void main() {
         MemoryFileNode('notes.txt', [1, 2, 3])
       ]),
     );
-    root = WorkspaceEntryRef(workspaceId: id, token: adapter.rootToken);
+    root =
+        WorkspaceEntryRef.issued(workspaceId: id, stableId: adapter.rootToken);
   });
 
   test('list returns root-bound opaque file references', () async {
@@ -72,7 +94,8 @@ void main() {
         file: file.ref,
         range: const ByteRange(offset: 0, count: 3),
         budget: budget(),
-        expectedRevision: const ContentRevision('stale')));
+        expectedRevision: WholeContentSha256(
+            '0000000000000000000000000000000000000000000000000000000000000000')));
     expect((result as WorkspaceSuccess<WorkspaceRead>).value.stability,
         RevisionStability.changed);
   });
@@ -85,7 +108,8 @@ void main() {
       root: MemoryDirectoryNode(
           'root', [MemoryFileNode('a', []), MemoryFileNode('b', [])]),
     );
-    root = WorkspaceEntryRef(workspaceId: id, token: adapter.rootToken);
+    root =
+        WorkspaceEntryRef.issued(workspaceId: id, stableId: adapter.rootToken);
     final pageBudget = budget();
     final first = (await adapter.list(WorkspaceListRequest(
             workspaceId: id,
@@ -118,7 +142,8 @@ void main() {
         MemoryDirectoryNode('second', [MemoryFileNode('c', [])]),
       ]),
     );
-    root = WorkspaceEntryRef(workspaceId: id, token: adapter.rootToken);
+    root =
+        WorkspaceEntryRef.issued(workspaceId: id, stableId: adapter.rootToken);
     final rootBudget = budget();
     final rootPage = (await adapter.list(WorkspaceListRequest(
             workspaceId: id,
@@ -172,5 +197,46 @@ void main() {
     ));
     expect((result as WorkspaceFailure<WorkspacePage>).kind,
         WorkspaceFailureKind.cancelled);
+  });
+
+  test('entry references round-trip without exposing authority', () {
+    final reference =
+        WorkspaceEntryRef.issued(workspaceId: id, stableId: adapter.rootToken);
+    final restored = WorkspaceEntryRef.parse(reference.serialize());
+    expect(restored, reference);
+    expect(reference.toString(), isNot(contains(adapter.rootToken)));
+    expect(() => WorkspaceEntryRef.parse('v1:${id.value}:../escape'),
+        throwsFormatException);
+  });
+
+  test('cancellation listeners settle once and can unregister', () {
+    final token = CancellationToken();
+    var calls = 0;
+    final unregister = token.register(() => calls++);
+    unregister();
+    token.cancel();
+    token.cancel();
+    expect(calls, 0);
+    token.register(() => calls++);
+    expect(calls, 1);
+  });
+
+  test('incomparable revision evidence is never verified', () async {
+    final page = (await adapter.list(WorkspaceListRequest(
+            workspaceId: id,
+            directory: root,
+            budget: budget())) as WorkspaceSuccess<WorkspacePage>)
+        .value;
+    final file = page.entries.single as WorkspaceFile;
+    final result = await adapter.read(WorkspaceReadRequest(
+      workspaceId: id,
+      file: file.ref,
+      range: const ByteRange(offset: 0, count: 3),
+      budget: budget(),
+      expectedRevision:
+          PlatformContentRevision(namespace: 'provider', value: 'version-1'),
+    ));
+    expect((result as WorkspaceSuccess<WorkspaceRead>).value.stability,
+        RevisionStability.unverified);
   });
 }
