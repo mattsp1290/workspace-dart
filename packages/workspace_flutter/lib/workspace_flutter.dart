@@ -3,8 +3,6 @@ library workspace_flutter;
 
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:workspace/workspace.dart';
 

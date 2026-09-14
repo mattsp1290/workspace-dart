@@ -33,8 +33,10 @@ void main() {
 
     final outcome = await manager.selectDirectory();
 
-    expect((outcome as WorkspaceFailure<WorkspaceId>).kind,
-        WorkspaceFailureKind.cancelled);
+    expect(
+      (outcome as WorkspaceFailure<WorkspaceId>).kind,
+      WorkspaceFailureKind.cancelled,
+    );
     expect(events, <String>[
       'reconcile',
       'reserve',
@@ -53,17 +55,20 @@ void main() {
 
     final outcome = await manager.selectDirectory();
 
-    expect((outcome as WorkspaceFailure<WorkspaceId>).kind,
-        WorkspaceFailureKind.providerFailure);
     expect(
-        events,
-        containsAllInOrder(<String>[
-          'activate',
-          'commit',
-          'abandon',
-          'forget',
-          'delete',
-        ]));
+      (outcome as WorkspaceFailure<WorkspaceId>).kind,
+      WorkspaceFailureKind.providerFailure,
+    );
+    expect(
+      events,
+      containsAllInOrder(<String>[
+        'activate',
+        'commit',
+        'abandon',
+        'forget',
+        'delete',
+      ]),
+    );
   });
 
   test('closed access rejects later operations as closed', () async {
@@ -76,40 +81,50 @@ void main() {
       schemaVersion: 1,
     );
     vault.envelopes[id] = Uint8List.fromList(<int>[1]);
-    final manager =
-        WorkspaceGrantManager(vault: vault, bridge: _Bridge(events));
+    final manager = WorkspaceGrantManager(
+      vault: vault,
+      bridge: _Bridge(events),
+    );
 
     final restored = await manager.restore(id);
     final access = (restored as WorkspaceSuccess<FlutterWorkspaceAccess>).value;
     await access.close();
     final outcome = await access.restore(id);
 
-    expect((outcome as WorkspaceFailure<WorkspaceDirectory>).kind,
-        WorkspaceFailureKind.closed);
-  });
-
-  test('access rejects a different workspace before loading an envelope',
-      () async {
-    final events = <String>[];
-    final vault = _Vault(events);
-    final id = WorkspaceId('workspace');
-    vault.metadata[id] = WorkspaceGrantMetadata(
-      id: id,
-      state: WorkspaceGrantState.active,
-      schemaVersion: 1,
+    expect(
+      (outcome as WorkspaceFailure<WorkspaceDirectory>).kind,
+      WorkspaceFailureKind.closed,
     );
-    vault.envelopes[id] = Uint8List.fromList(<int>[1]);
-    final access = (await WorkspaceGrantManager(
-      vault: vault,
-      bridge: _Bridge(events),
-    ).restore(id) as WorkspaceSuccess<FlutterWorkspaceAccess>)
-        .value;
-
-    final outcome = await access.restore(WorkspaceId('other-workspace'));
-
-    expect((outcome as WorkspaceFailure<WorkspaceDirectory>).kind,
-        WorkspaceFailureKind.invalidReference);
   });
+
+  test(
+    'access rejects a different workspace before loading an envelope',
+    () async {
+      final events = <String>[];
+      final vault = _Vault(events);
+      final id = WorkspaceId('workspace');
+      vault.metadata[id] = WorkspaceGrantMetadata(
+        id: id,
+        state: WorkspaceGrantState.active,
+        schemaVersion: 1,
+      );
+      vault.envelopes[id] = Uint8List.fromList(<int>[1]);
+      final access =
+          (await WorkspaceGrantManager(
+                    vault: vault,
+                    bridge: _Bridge(events),
+                  ).restore(id)
+                  as WorkspaceSuccess<FlutterWorkspaceAccess>)
+              .value;
+
+      final outcome = await access.restore(WorkspaceId('other-workspace'));
+
+      expect(
+        (outcome as WorkspaceFailure<WorkspaceDirectory>).kind,
+        WorkspaceFailureKind.invalidReference,
+      );
+    },
+  );
 
   test('concurrent close callers share the native cleanup barrier', () async {
     final events = <String>[];
@@ -145,18 +160,23 @@ final class _Vault implements WorkspaceGrantVault {
   final Map<WorkspaceId, Uint8List> envelopes = {};
 
   @override
-  Future<void> reservePending(
-      {required WorkspaceId id, required int schemaVersion}) async {
+  Future<void> reservePending({
+    required WorkspaceId id,
+    required int schemaVersion,
+  }) async {
     events.add('reserve');
     metadata[id] = WorkspaceGrantMetadata(
-        id: id,
-        state: WorkspaceGrantState.pending,
-        schemaVersion: schemaVersion);
+      id: id,
+      state: WorkspaceGrantState.pending,
+      schemaVersion: schemaVersion,
+    );
   }
 
   @override
   Future<void> storeNativeEnvelope(
-      WorkspaceId id, Uint8List nativeEnvelope) async {
+    WorkspaceId id,
+    Uint8List nativeEnvelope,
+  ) async {
     events.add('envelope');
     envelopes[id] = Uint8List.fromList(nativeEnvelope);
   }
@@ -165,13 +185,19 @@ final class _Vault implements WorkspaceGrantVault {
   Future<void> activate(WorkspaceId id) async {
     events.add('activate');
     metadata[id] = WorkspaceGrantMetadata(
-        id: id, state: WorkspaceGrantState.active, schemaVersion: 1);
+      id: id,
+      state: WorkspaceGrantState.active,
+      schemaVersion: 1,
+    );
   }
 
   @override
   Future<void> markDeleting(WorkspaceId id) async {
     metadata[id] = WorkspaceGrantMetadata(
-        id: id, state: WorkspaceGrantState.deleting, schemaVersion: 1);
+      id: id,
+      state: WorkspaceGrantState.deleting,
+      schemaVersion: 1,
+    );
   }
 
   @override
@@ -202,7 +228,8 @@ final class _Bridge implements WorkspacePlatformBridge {
 
   @override
   Future<WorkspaceOutcome<WorkspaceSelection>> selectDirectory(
-      WorkspaceId id) async {
+    WorkspaceId id,
+  ) async {
     events.add('select');
     return selectionFails
         ? const WorkspaceFailure(WorkspaceFailureKind.cancelled)
@@ -234,20 +261,25 @@ final class _Bridge implements WorkspacePlatformBridge {
 
   @override
   Future<WorkspaceOutcome<WorkspaceDirectory>> restore(
-          WorkspaceId id, Uint8List nativeEnvelope) async =>
-      WorkspaceSuccess(WorkspaceDirectory(
-        ref: WorkspaceEntryRef.issued(workspaceId: id, stableId: 'root'),
-        displayPath: WorkspaceDisplayPath('root'),
-        name: 'root',
-      ));
+    WorkspaceId id,
+    Uint8List nativeEnvelope,
+  ) async => WorkspaceSuccess(
+    WorkspaceDirectory(
+      ref: WorkspaceEntryRef.issued(workspaceId: id, stableId: 'root'),
+      displayPath: WorkspaceDisplayPath('root'),
+      name: 'root',
+    ),
+  );
 
   @override
   Future<WorkspaceOutcome<WorkspacePage>> list(
-          WorkspaceListRequest request, Uint8List nativeEnvelope) async =>
-      const WorkspaceFailure(WorkspaceFailureKind.unsupported);
+    WorkspaceListRequest request,
+    Uint8List nativeEnvelope,
+  ) async => const WorkspaceFailure(WorkspaceFailureKind.unsupported);
 
   @override
   Future<WorkspaceOutcome<WorkspaceRead>> read(
-          WorkspaceReadRequest request, Uint8List nativeEnvelope) async =>
-      const WorkspaceFailure(WorkspaceFailureKind.unsupported);
+    WorkspaceReadRequest request,
+    Uint8List nativeEnvelope,
+  ) async => const WorkspaceFailure(WorkspaceFailureKind.unsupported);
 }
