@@ -72,10 +72,10 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          # The hosted runner has no hardware display surface.  Force the
-          # emulator onto the headless software GPU path before Flutter tries
-          # to attach its integration-test service.
-          emulator-options: -no-window -no-snapshot -no-audio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          # The hosted runner has no reliable hardware GPU surface.  Use the
+          # software GPU fallback, but keep the virtual display available for
+          # the action's post-boot ADB input handshake.
+          emulator-options: -no-snapshot -no-audio -no-boot-anim -camera-back none -gpu swiftshader_indirect
           disable-animations: true
           working-directory: packages/workspace_flutter/example
           script: |
