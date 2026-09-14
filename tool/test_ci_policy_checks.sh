@@ -71,6 +71,8 @@ grep -Fq 'flutter clean' <<<"$cocoapods_job"
 grep -Fq 'flutter pub get --enforce-lockfile' <<<"$cocoapods_job"
 
 android_job=$(sed -n '/flutter-android:/,/^$/p' "$root/.github/workflows/ci.yml")
+grep -Fq 'group: ci-${{ github.workflow }}-${{ github.ref }}' "$root/.github/workflows/ci.yml"
+grep -Fq 'cancel-in-progress: true' "$root/.github/workflows/ci.yml"
 grep -Fq 'Install the Android emulator PulseAudio runtime' <<<"$android_job"
 grep -Fq 'sudo apt-get install --yes libpulse0' <<<"$android_job"
 grep -Fq 'Enable KVM for the Android emulator' <<<"$android_job"
