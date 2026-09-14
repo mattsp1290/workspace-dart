@@ -118,13 +118,6 @@ jobs:
           xcodebuild -workspace CompatibilityHost.xcworkspace -scheme CompatibilityHost -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
           xcrun simctl install "$simulator_id" build/Build/Products/Debug-iphonesimulator/CompatibilityHost.app
           xcrun simctl launch "$simulator_id" com.mattsp1290.workspaceflutter.compatibilityhost --terminate-running
-      - name: Run registered and fixture iOS conformance
-        working-directory: packages/workspace_flutter/example
-        run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
-          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
-          flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
-          flutter test integration_test/native_conformance_test.dart --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true -d "$simulator_id"
       - name: Run linked production-plugin XCTest host
         working-directory: packages/workspace_flutter/example/ios
         run: |
@@ -132,6 +125,13 @@ jobs:
           test -n "$simulator_id"; rm -rf "$RUNNER_TEMP/RunnerTests.xcresult"
           xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
           "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" xcresult "$RUNNER_TEMP/RunnerTests.xcresult" RunnerTests.testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler
+      - name: Run registered and fixture iOS conformance
+        working-directory: packages/workspace_flutter/example
+        run: |
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
+          flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
+          flutter test integration_test/native_conformance_test.dart --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true -d "$simulator_id"
       - run: flutter build ios --no-codesign
         working-directory: packages/workspace_flutter/example
       - run: "! strings build/ios/iphoneos/Runner.app/Runner | grep -E -i 'native.?test|fake.?provider|fixture'"

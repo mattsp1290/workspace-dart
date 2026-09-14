@@ -60,6 +60,9 @@ cp "$root/packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxpro
 cocoapods_job=$(sed -n '/flutter-ios-cocoapods:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'Remove generated SwiftPM linkage in this CocoaPods checkout' <<<"$cocoapods_job"
 grep -Fq -- '-parallel-testing-enabled NO' <<<"$cocoapods_job"
+xctest_line=$(grep -n 'Run linked production-plugin XCTest host' <<<"$cocoapods_job" | cut -d: -f1)
+conformance_line=$(grep -n 'Run registered and fixture iOS conformance' <<<"$cocoapods_job" | cut -d: -f1)
+test "$xctest_line" -lt "$conformance_line"
 
 swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
