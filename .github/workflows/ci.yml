@@ -67,6 +67,10 @@ jobs:
           set -o pipefail
           ./gradlew -PskipDependencyChecks=true :workspace_flutter:buildEnvironment 2>&1 | tee "$RUNNER_TEMP/gradle-build-environment.log"
           ! grep -E 'org\.jetbrains\.kotlin:kotlin-gradle-plugin|org\.jetbrains\.kotlin\.android' "$RUNNER_TEMP/gradle-build-environment.log"
+      - name: Install the Android emulator PulseAudio runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libpulse0
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
