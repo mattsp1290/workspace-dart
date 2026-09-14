@@ -61,6 +61,7 @@ cocoapods_job=$(sed -n '/flutter-ios-cocoapods:/,/^$/p' "$root/.github/workflows
 grep -Fq 'Remove generated SwiftPM linkage in this CocoaPods checkout' <<<"$cocoapods_job"
 grep -Fq 'Install CocoaPods for the direct XCTest host' <<<"$cocoapods_job"
 grep -Fq -- '-parallel-testing-enabled NO' <<<"$cocoapods_job"
+grep -Fq 'RunnerTests/testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler()' <<<"$cocoapods_job"
 xctest_line=$(grep -n 'Run linked production-plugin XCTest host' <<<"$cocoapods_job" | cut -d: -f1)
 conformance_line=$(grep -n 'Run registered and fixture iOS conformance' <<<"$cocoapods_job" | cut -d: -f1)
 test "$xctest_line" -lt "$conformance_line"
