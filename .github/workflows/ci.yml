@@ -72,6 +72,11 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
+          # The hosted runner has no hardware display surface.  Force the
+          # emulator onto the headless software GPU path before Flutter tries
+          # to attach its integration-test service.
+          emulator-options: -no-window -no-snapshot -no-audio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
           working-directory: packages/workspace_flutter/example
           script: |
             flutter test integration_test/native_conformance_test.dart --flavor nativeTest -d emulator-5554
@@ -121,13 +126,6 @@ jobs:
           xcodebuild -workspace CompatibilityHost.xcworkspace -scheme CompatibilityHost -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
           xcrun simctl install "$simulator_id" build/Build/Products/Debug-iphonesimulator/CompatibilityHost.app
           xcrun simctl launch "$simulator_id" com.mattsp1290.workspaceflutter.compatibilityhost --terminate-running
-      - name: Run linked production-plugin XCTest host
-        working-directory: packages/workspace_flutter/example/ios
-        run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
-          test -n "$simulator_id"; rm -rf "$RUNNER_TEMP/RunnerTests.xcresult"
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
-          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" xcresult "$RUNNER_TEMP/RunnerTests.xcresult" 'RunnerTests/testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler()'
       - name: Run registered and fixture iOS conformance
         working-directory: packages/workspace_flutter/example
         run: |
@@ -135,6 +133,22 @@ jobs:
           test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
           flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
           flutter test integration_test/native_conformance_test.dart --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true -d "$simulator_id"
+      - name: Restore the normal CocoaPods XCTest host after Flutter conformance
+        working-directory: packages/workspace_flutter/example
+        run: |
+          # `flutter test integration_test/...` writes a temporary listener
+          # entrypoint into the Xcode configuration, then removes it on exit.
+          # Regenerate the normal app configuration before linked XCTest.
+          flutter clean
+          flutter pub get --enforce-lockfile
+          (cd ios && pod install)
+      - name: Run linked production-plugin XCTest host
+        working-directory: packages/workspace_flutter/example/ios
+        run: |
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"; rm -rf "$RUNNER_TEMP/RunnerTests.xcresult"
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
+          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" xcresult "$RUNNER_TEMP/RunnerTests.xcresult" 'RunnerTests/testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler()'
       - run: flutter build ios --no-codesign
         working-directory: packages/workspace_flutter/example
       - run: "! strings build/ios/iphoneos/Runner.app/Runner | grep -E -i 'native.?test|fake.?provider|fixture'"
