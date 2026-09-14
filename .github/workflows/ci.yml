@@ -112,7 +112,7 @@ jobs:
         run: |
           pod install
           simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
+          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b -t 180
           xcodebuild -workspace CompatibilityHost.xcworkspace -scheme CompatibilityHost -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
           xcrun simctl install "$simulator_id" build/Build/Products/Debug-iphonesimulator/CompatibilityHost.app
           xcrun simctl launch "$simulator_id" com.mattsp1290.workspaceflutter.compatibilityhost --terminate-running
@@ -120,7 +120,7 @@ jobs:
         working-directory: packages/workspace_flutter/example
         run: |
           simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
+          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b -t 180
           flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
           flutter test integration_test/native_conformance_test.dart --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true -d "$simulator_id"
       - name: Run linked production-plugin XCTest host
@@ -173,5 +173,5 @@ jobs:
           simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
           test -n "$simulator_id"
           xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
+          xcrun simctl bootstatus "$simulator_id" -b -t 180
           flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
