@@ -20,13 +20,6 @@ jobs:
           set -o pipefail
           (cd packages/workspace && dart pub publish --dry-run) 2>&1 | tee "$RUNNER_TEMP/workspace-pub-dry-run.log"
           tool/verify_pub_dry_run_output.sh "$RUNNER_TEMP/workspace-pub-dry-run.log"
-      - name: Prove a clean consumer can resolve one immutable remote commit
-        env:
-          CONSUMER_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          CONSUMER_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
-        run: |
-          WORKSPACE_DART_GIT_URL="$CONSUMER_REPOSITORY" tool/verify_git_consumer.sh "$CONSUMER_REF"
-
   flutter-android:
     runs-on: ubuntu-24.04
     steps:
@@ -52,6 +45,12 @@ jobs:
       - name: Check Flutter-package formatting after Flutter dependencies resolve
         run: dart format --output=none --set-exit-if-changed .
         working-directory: packages/workspace_flutter
+      - name: Prove a clean consumer can resolve one immutable remote commit
+        env:
+          CONSUMER_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          CONSUMER_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
+        run: |
+          WORKSPACE_DART_GIT_URL="$CONSUMER_REPOSITORY" tool/verify_git_consumer.sh "$CONSUMER_REF"
       - run: flutter analyze && flutter test
         working-directory: packages/workspace_flutter/example
       - name: Build production APK and reject owned Kotlin diagnostics
