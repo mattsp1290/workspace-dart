@@ -57,6 +57,10 @@ cp "$root/packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxpro
 "$root/tool/disable_ios_swiftpm_linkage.rb" "$tmp/Runner.pbxproj"
 ! rg -q 'FlutterGeneratedPluginSwiftPackage|FlutterFramework' "$tmp/Runner.pbxproj"
 
+cocoapods_job=$(sed -n '/flutter-ios-cocoapods:/,/^$/p' "$root/.github/workflows/ci.yml")
+grep -Fq 'Remove generated SwiftPM linkage in this CocoaPods checkout' <<<"$cocoapods_job"
+grep -Fq -- '-parallel-testing-enabled NO' <<<"$cocoapods_job"
+
 swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
 grep -Fq 'swift package show-dependencies' <<<"$swiftpm_job"

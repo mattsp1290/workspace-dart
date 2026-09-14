@@ -130,7 +130,7 @@ jobs:
         run: |
           simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
           test -n "$simulator_id"; rm -rf "$RUNNER_TEMP/RunnerTests.xcresult"
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
           "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" xcresult "$RUNNER_TEMP/RunnerTests.xcresult" RunnerTests.testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler
       - run: flutter build ios --no-codesign
         working-directory: packages/workspace_flutter/example
