@@ -99,6 +99,8 @@ jobs:
       - run: xcodebuild -version | grep -F 'Xcode 26.2'
       - run: flutter --version && swift --version && xcodebuild -version
       - run: flutter config --no-enable-swift-package-manager
+      - name: Remove generated SwiftPM linkage in this CocoaPods checkout
+        run: tool/disable_ios_swiftpm_linkage.rb packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxproj
       - run: flutter pub get --enforce-lockfile
         working-directory: packages/workspace_flutter/example
       - name: Run standalone Swift native tests

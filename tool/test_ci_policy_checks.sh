@@ -53,6 +53,10 @@ cat > "$tmp/junit/result.xml" <<'EOF'
 EOF
 "$root/tool/verify_native_test_results.sh" junit "$tmp/junit" WorkspaceProtocolTest
 
+cp "$root/packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxproj" "$tmp/Runner.pbxproj"
+"$root/tool/disable_ios_swiftpm_linkage.rb" "$tmp/Runner.pbxproj"
+! rg -q 'FlutterGeneratedPluginSwiftPackage|FlutterFramework' "$tmp/Runner.pbxproj"
+
 swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
 grep -Fq 'swift package show-dependencies' <<<"$swiftpm_job"
