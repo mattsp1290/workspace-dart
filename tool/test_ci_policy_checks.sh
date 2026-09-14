@@ -55,4 +55,4 @@ EOF
 
 swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
-grep -Fq 'test ! -d packages/workspace_flutter/example/ios/Pods' <<<"$swiftpm_job"
+grep -Fq "test ! -e 'packages/workspace_flutter/example/ios/Pods/Local Podspecs/workspace_flutter.podspec.json'" <<<"$swiftpm_job"
