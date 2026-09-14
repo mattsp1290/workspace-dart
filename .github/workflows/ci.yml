@@ -103,6 +103,9 @@ jobs:
         run: tool/disable_ios_swiftpm_linkage.rb packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxproj
       - run: flutter pub get --enforce-lockfile
         working-directory: packages/workspace_flutter/example
+      - name: Install CocoaPods for the direct XCTest host
+        working-directory: packages/workspace_flutter/example/ios
+        run: pod install
       - name: Run standalone Swift native tests
         working-directory: packages/workspace_flutter/ios
         run: |
