@@ -93,6 +93,9 @@ class WorkspaceFixtureDocumentProvider : AndroidDocumentProvider {
     override fun mimeType(uri: Uri, cancellation: CancellationSignal): String? = when {
         uri.pathSegments.lastOrNull() == rootId -> DocumentsContract.Document.MIME_TYPE_DIR
         uri.pathSegments.lastOrNull() == blockedReadRootId -> DocumentsContract.Document.MIME_TYPE_DIR
+        // The blocked fixture must first pass the adapter's use-time file
+        // validation so openRead can observe the cancellation signal.
+        uri.pathSegments.lastOrNull() == blockedReadFileId -> "text/plain"
         uri.pathSegments.lastOrNull() == deletedRootId -> DocumentsContract.Document.MIME_TYPE_DIR
         uri.pathSegments.lastOrNull() == changedTypeRootId -> DocumentsContract.Document.MIME_TYPE_DIR
         uri.pathSegments.lastOrNull() == changedTypeFileId -> DocumentsContract.Document.MIME_TYPE_DIR
