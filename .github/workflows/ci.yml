@@ -170,7 +170,7 @@ jobs:
       - name: Run registered production-handler conformance through SwiftPM
         working-directory: packages/workspace_flutter/example
         run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
           test -n "$simulator_id"
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b

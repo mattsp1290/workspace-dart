@@ -56,3 +56,4 @@ EOF
 swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
 grep -Fq 'swift package show-dependencies' <<<"$swiftpm_job"
+grep -Fq 'select(.isAvailable == true and (.name | startswith("iPhone")))' <<<"$swiftpm_job"
