@@ -82,10 +82,9 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          # The hosted runner has no reliable hardware GPU surface.  Use the
-          # software GPU fallback, but keep the virtual display available for
-          # the action's post-boot ADB input handshake.
-          emulator-options: -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          # The hosted runner has no X display. Suppress the Qt window while
+          # retaining the software GPU backend required by the headless AVD.
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
           disable-animations: true
           working-directory: packages/workspace_flutter/example
           script: |
