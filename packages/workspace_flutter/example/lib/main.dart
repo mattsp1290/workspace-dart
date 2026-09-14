@@ -145,11 +145,20 @@ final class _ProbeScreenState extends State<ProbeScreen> {
     await _run(() async {
       final outcome = await _manager.selectDirectory();
       _status = switch (outcome) {
-        WorkspaceSuccess<WorkspaceId>(:final value) =>
-          'Selected workspace ${value.value.substring(0, 8)}',
+        WorkspaceSuccess<WorkspaceId>(:final value) => await _selectCurrent(
+          value,
+        ),
         WorkspaceFailure<WorkspaceId>(:final kind) => 'Selection: ${kind.name}',
       };
     });
+  }
+
+  Future<String> _selectCurrent(WorkspaceId selected) async {
+    final known = await _manager.listKnownWorkspaces();
+    for (final workspace in known) {
+      if (workspace.id != selected) await _manager.forget(workspace.id);
+    }
+    return 'Selected workspace ${selected.value.substring(0, 8)}';
   }
 
   Future<void> _restoreAndRead() async {

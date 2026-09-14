@@ -2,8 +2,11 @@ part of workspace_flutter;
 
 /// Publicly queryable lifecycle metadata. It never contains a native grant.
 final class WorkspaceGrantMetadata {
-  const WorkspaceGrantMetadata(
-      {required this.id, required this.state, required this.schemaVersion});
+  const WorkspaceGrantMetadata({
+    required this.id,
+    required this.state,
+    required this.schemaVersion,
+  });
   final WorkspaceId id;
   final WorkspaceGrantState state;
   final int schemaVersion;
@@ -14,8 +17,10 @@ enum WorkspaceGrantState { pending, active, deleting }
 /// Trusted host-private storage for opaque envelopes. Its envelope methods are
 /// only for the plugin manager's restore path—not for models, logs, or UI.
 abstract interface class WorkspaceGrantVault {
-  Future<void> reservePending(
-      {required WorkspaceId id, required int schemaVersion});
+  Future<void> reservePending({
+    required WorkspaceId id,
+    required int schemaVersion,
+  });
   Future<void> storeNativeEnvelope(WorkspaceId id, Uint8List nativeEnvelope);
   Future<void> activate(WorkspaceId id);
   Future<void> markDeleting(WorkspaceId id);
@@ -28,7 +33,7 @@ abstract interface class WorkspaceGrantVault {
 /// Picker result whose envelope can only be copied by the trusted manager.
 final class WorkspaceSelection {
   WorkspaceSelection(Uint8List nativeEnvelope)
-      : _nativeEnvelope = Uint8List.fromList(nativeEnvelope);
+    : _nativeEnvelope = Uint8List.fromList(nativeEnvelope);
   final Uint8List _nativeEnvelope;
 
   /// Only the trusted grant manager may copy this into its host vault.
@@ -39,11 +44,17 @@ final class WorkspaceSelection {
 abstract interface class WorkspacePlatformBridge {
   Future<WorkspaceOutcome<WorkspaceSelection>> selectDirectory(WorkspaceId id);
   Future<WorkspaceOutcome<WorkspaceDirectory>> restore(
-      WorkspaceId id, Uint8List nativeEnvelope);
+    WorkspaceId id,
+    Uint8List nativeEnvelope,
+  );
   Future<WorkspaceOutcome<WorkspacePage>> list(
-      WorkspaceListRequest request, Uint8List nativeEnvelope);
+    WorkspaceListRequest request,
+    Uint8List nativeEnvelope,
+  );
   Future<WorkspaceOutcome<WorkspaceRead>> read(
-      WorkspaceReadRequest request, Uint8List nativeEnvelope);
+    WorkspaceReadRequest request,
+    Uint8List nativeEnvelope,
+  );
   Future<void> cancelWorkspace(WorkspaceId id);
   Future<void> commitSelection(WorkspaceId id);
   Future<void> abandonSelection(WorkspaceId id);
@@ -53,10 +64,11 @@ abstract interface class WorkspacePlatformBridge {
 
 /// Owns crash-safe grant transitions; each successful selection creates a new ID.
 final class WorkspaceGrantManager {
-  WorkspaceGrantManager(
-      {required WorkspaceGrantVault vault, WorkspacePlatformBridge? bridge})
-      : _vault = vault,
-        _bridge = bridge ?? MethodChannelWorkspaceBridge();
+  WorkspaceGrantManager({
+    required WorkspaceGrantVault vault,
+    WorkspacePlatformBridge? bridge,
+  }) : _vault = vault,
+       _bridge = bridge ?? MethodChannelWorkspaceBridge();
   final WorkspaceGrantVault _vault;
   final WorkspacePlatformBridge _bridge;
   Future<void>? _reconciliation;
@@ -72,24 +84,31 @@ final class WorkspaceGrantManager {
         return _castFailure(selection);
       }
       await _vault.storeNativeEnvelope(
-          id, selection.value._takeNativeEnvelope());
+        id,
+        selection.value._takeNativeEnvelope(),
+      );
       await _vault.activate(id);
       await _bridge.commitSelection(id);
       return WorkspaceSuccess(id);
     } catch (_) {
       await _discardSelection(id);
-      return const WorkspaceFailure(WorkspaceFailureKind.providerFailure,
-          message: 'The directory grant could not be stored.');
+      return const WorkspaceFailure(
+        WorkspaceFailureKind.providerFailure,
+        message: 'The directory grant could not be stored.',
+      );
     }
   }
 
   Future<WorkspaceOutcome<FlutterWorkspaceAccess>> restore(
-      WorkspaceId id) async {
+    WorkspaceId id,
+  ) async {
     try {
       await _ensureReconciled();
     } catch (_) {
-      return const WorkspaceFailure(WorkspaceFailureKind.providerFailure,
-          message: 'Workspace grants could not be reconciled.');
+      return const WorkspaceFailure(
+        WorkspaceFailureKind.providerFailure,
+        message: 'Workspace grants could not be reconciled.',
+      );
     }
     final metadata = await _vault.loadMetadata(id);
     if (metadata == null || metadata.state != WorkspaceGrantState.active)
@@ -100,8 +119,14 @@ final class WorkspaceGrantManager {
     final root = await _bridge.restore(id, envelope);
     if (root is! WorkspaceSuccess<WorkspaceDirectory>)
       return _castFailure(root);
-    return WorkspaceSuccess(FlutterWorkspaceAccess._(
-        id: id, root: root.value, vault: _vault, bridge: _bridge));
+    return WorkspaceSuccess(
+      FlutterWorkspaceAccess._(
+        id: id,
+        root: root.value,
+        vault: _vault,
+        bridge: _bridge,
+      ),
+    );
   }
 
   Future<WorkspaceOutcome<void>> forget(WorkspaceId id) async {
@@ -113,8 +138,10 @@ final class WorkspaceGrantManager {
       return const WorkspaceSuccess(null);
     } catch (_) {
       _reconciliation = null;
-      return const WorkspaceFailure(WorkspaceFailureKind.providerFailure,
-          message: 'The workspace record could not be removed.');
+      return const WorkspaceFailure(
+        WorkspaceFailureKind.providerFailure,
+        message: 'The workspace record could not be removed.',
+      );
     }
   }
 
@@ -159,18 +186,20 @@ final class WorkspaceGrantManager {
   }
 
   String _newId() => List<String>.generate(
-      32, (_) => Random.secure().nextInt(16).toRadixString(16)).join();
+    32,
+    (_) => Random.secure().nextInt(16).toRadixString(16),
+  ).join();
 }
 
 /// Root-bound adapter that obtains an opaque envelope only through its vault.
 final class FlutterWorkspaceAccess implements WorkspaceAdapter {
-  FlutterWorkspaceAccess._(
-      {required this.id,
-      required this.root,
-      required WorkspaceGrantVault vault,
-      required WorkspacePlatformBridge bridge})
-      : _vault = vault,
-        _bridge = bridge;
+  FlutterWorkspaceAccess._({
+    required this.id,
+    required this.root,
+    required WorkspaceGrantVault vault,
+    required WorkspacePlatformBridge bridge,
+  }) : _vault = vault,
+       _bridge = bridge;
   final WorkspaceId id;
   final WorkspaceDirectory root;
   final WorkspaceGrantVault _vault;
@@ -180,7 +209,8 @@ final class FlutterWorkspaceAccess implements WorkspaceAdapter {
   Future<Uint8List?> _envelope() => _vault.loadNativeEnvelope(id);
   @override
   Future<WorkspaceOutcome<WorkspaceDirectory>> restore(
-      WorkspaceId workspaceId) async {
+    WorkspaceId workspaceId,
+  ) async {
     if (_closed) return const WorkspaceFailure(WorkspaceFailureKind.closed);
     if (workspaceId != id) {
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
@@ -193,7 +223,8 @@ final class FlutterWorkspaceAccess implements WorkspaceAdapter {
 
   @override
   Future<WorkspaceOutcome<WorkspacePage>> list(
-      WorkspaceListRequest request) async {
+    WorkspaceListRequest request,
+  ) async {
     if (_closed) return const WorkspaceFailure(WorkspaceFailureKind.closed);
     if (request.workspaceId != id) {
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
@@ -206,7 +237,8 @@ final class FlutterWorkspaceAccess implements WorkspaceAdapter {
 
   @override
   Future<WorkspaceOutcome<WorkspaceRead>> read(
-      WorkspaceReadRequest request) async {
+    WorkspaceReadRequest request,
+  ) async {
     if (_closed) return const WorkspaceFailure(WorkspaceFailureKind.closed);
     if (request.workspaceId != id) {
       return const WorkspaceFailure(WorkspaceFailureKind.invalidReference);
@@ -228,5 +260,5 @@ final class FlutterWorkspaceAccess implements WorkspaceAdapter {
 
 WorkspaceFailure<T> _castFailure<T, S>(WorkspaceOutcome<S> result) =>
     result is WorkspaceFailure<S>
-        ? WorkspaceFailure<T>(result.kind, message: result.message)
-        : const WorkspaceFailure(WorkspaceFailureKind.providerFailure);
+    ? WorkspaceFailure<T>(result.kind, message: result.message)
+    : const WorkspaceFailure(WorkspaceFailureKind.providerFailure);

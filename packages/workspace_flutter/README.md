@@ -25,3 +25,13 @@ flutter test integration_test/native_conformance_test.dart -d <android-or-ios-de
 
 These checks cover request decoding only. They do not qualify a physical file
 provider, picker flow, process restart, or resource-cleanup behavior.
+
+## Toolchain and distribution
+
+This plugin requires Flutter 3.44+ and Dart 3.12+. Its Android build uses
+Flutter's Built-in Kotlin support. iOS supports both CocoaPods and Flutter
+Swift Package Manager from the same production Swift sources.
+
+`workspace_flutter` is distributed from this repository's immutable Git refs;
+it is deliberately not publishable because its `workspace` path dependency
+must not resolve to the unrelated `workspace` package on pub.dev.

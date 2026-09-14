@@ -1,9 +1,11 @@
 name: workspace_flutter
 description: Flutter facade placeholder for capability-bounded workspace access.
 version: 0.1.0
+repository: https://github.com/mattsp1290/workspace-dart
 publish_to: none
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.12.0
+  flutter: '>=3.44.0'
 dependencies:
   crypto: ^3.0.3
   flutter:

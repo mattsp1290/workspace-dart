@@ -1,109 +1,209 @@
 name: CI
-on:
-  pull_request:
-  push:
+on: [pull_request, push]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dart:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
-      - run: dart pub get
+        with: {sdk: 3.13.1}
+      - run: dart --version
+      - run: dart pub get --enforce-lockfile
       - run: git diff --check
-      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart format --output=none --set-exit-if-changed packages/workspace
       - run: dart analyze
       - run: dart test packages/workspace
+      - run: tool/test_ci_policy_checks.sh
+      - name: Validate pure-Dart archive without publishing
+        run: |
+          set -o pipefail
+          (cd packages/workspace && dart pub publish --dry-run) 2>&1 | tee "$RUNNER_TEMP/workspace-pub-dry-run.log"
+          tool/verify_pub_dry_run_output.sh "$RUNNER_TEMP/workspace-pub-dry-run.log"
   flutter-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+        with: {flutter-version: 3.47.1}
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - run: flutter pub get
+        with: {distribution: temurin, java-version: '21'}
+      - run: flutter --version && java -version
+      - name: Assert Android SDK tuple used by the plugin
+        run: |
+          test -d "${ANDROID_HOME:?}/platforms/android-35"
+          test -n "$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -name '35.*' -print -quit)"
+      - name: Reject repository-owned external Kotlin Gradle Plugin use
+        run: |
+          ! rg -n --glob '*.gradle' --glob '*.gradle.kts' "apply plugin: ['\"]kotlin-android|org\.jetbrains\.kotlin\.android|org\.jetbrains\.kotlin:kotlin-gradle-plugin" packages/workspace_flutter/android packages/workspace_flutter/example/android
+      - run: flutter pub get --enforce-lockfile
         working-directory: packages/workspace_flutter
-      - run: flutter analyze
+      - run: flutter analyze && flutter test
         working-directory: packages/workspace_flutter
-      - run: flutter test
+      - run: flutter pub get --enforce-lockfile
+        working-directory: packages/workspace_flutter/example
+      - name: Check Flutter-package formatting after Flutter dependencies resolve
+        run: dart format --output=none --set-exit-if-changed .
         working-directory: packages/workspace_flutter
-      - run: flutter pub get
+      - name: Prove a clean consumer can resolve one immutable remote commit
+        env:
+          CONSUMER_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          CONSUMER_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
+        run: |
+          WORKSPACE_DART_GIT_URL="$CONSUMER_REPOSITORY" tool/verify_git_consumer.sh "$CONSUMER_REF"
+      - run: flutter analyze && flutter test
         working-directory: packages/workspace_flutter/example
-      - run: flutter analyze
+      - name: Build production APK and reject owned Kotlin diagnostics
         working-directory: packages/workspace_flutter/example
-      - run: flutter test
-        working-directory: packages/workspace_flutter/example
+        run: |
+          set -o pipefail
+          flutter clean
+          flutter pub get --enforce-lockfile
+          flutter build apk --debug --flavor production --android-skip-build-dependency-validation 2>&1 | tee "$RUNNER_TEMP/flutter-android.log"
+          "$GITHUB_WORKSPACE/tool/verify_flutter_toolchain_output.sh" android "$RUNNER_TEMP/flutter-android.log"
+      - name: Verify no external KGP is resolved by owned projects
+        working-directory: packages/workspace_flutter/example/android
+        run: |
+          set -o pipefail
+          ./gradlew -PskipDependencyChecks=true :workspace_flutter:buildEnvironment 2>&1 | tee "$RUNNER_TEMP/gradle-build-environment.log"
+          ! grep -E 'org\.jetbrains\.kotlin:kotlin-gradle-plugin|org\.jetbrains\.kotlin\.android' "$RUNNER_TEMP/gradle-build-environment.log"
+      - name: Install the Android emulator PulseAudio runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libpulse0
+      - name: Enable KVM for the Android emulator
+        run: |
+          test -e /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_2
+          # The hosted runner has no X display. Suppress the Qt window while
+          # retaining the software GPU backend required by the headless AVD.
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
+          working-directory: packages/workspace_flutter/example
           script: |
             flutter test integration_test/native_conformance_test.dart --flavor nativeTest -d emulator-5554
             cd android
-            ./gradlew :workspace_flutter:connectedDebugAndroidTest
-          working-directory: packages/workspace_flutter/example
-      - run: ./gradlew :workspace_flutter:testDebugUnitTest
+            rm -rf ../build/workspace_flutter/outputs/androidTest-results/connected
+            ./gradlew -PskipDependencyChecks=true :workspace_flutter:connectedDebugAndroidTest
+            "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" junit ../build/workspace_flutter/outputs/androidTest-results/connected WorkspaceTestDocumentProviderTest
+      - name: Run Kotlin JVM native tests
         working-directory: packages/workspace_flutter/example/android
-      - run: flutter build apk --debug --flavor production
-        working-directory: packages/workspace_flutter/example
+        run: |
+          rm -rf ../build/workspace_flutter/test-results/testDebugUnitTest
+          ./gradlew -PskipDependencyChecks=true :workspace_flutter:testDebugUnitTest
+          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" junit ../build/workspace_flutter/test-results/testDebugUnitTest WorkspaceProtocolTest
+          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" junit ../build/workspace_flutter/test-results/testDebugUnitTest WorkspaceOperationRegistryTest
       - run: "! unzip -p build/app/outputs/flutter-apk/app-production-debug.apk 'classes*.dex' | strings | grep -E -i 'native.?test|fake.?provider|fixture'"
         working-directory: packages/workspace_flutter/example
-  flutter-ios:
-    runs-on: macos-latest
+
+  flutter-ios-cocoapods:
+    runs-on: macos-26
+    env: {DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter pub get
+        with: {flutter-version: 3.47.1}
+      - run: xcodebuild -version | grep -F 'Xcode 26.2'
+      - run: flutter --version && swift --version && xcodebuild -version
+      - run: flutter config --no-enable-swift-package-manager
+      - name: Remove generated SwiftPM linkage in this CocoaPods checkout
+        run: tool/disable_ios_swiftpm_linkage.rb packages/workspace_flutter/example/ios/Runner.xcodeproj/project.pbxproj
+      - run: flutter pub get --enforce-lockfile
         working-directory: packages/workspace_flutter/example
-      - run: swift test
+      - name: Install CocoaPods for the direct XCTest host
+        working-directory: packages/workspace_flutter/example/ios
+        run: pod install
+      - name: Run standalone Swift native tests
         working-directory: packages/workspace_flutter/ios
-      - name: Build and launch the iOS 18.2 compatibility host
+        run: |
+          set -o pipefail
+          swift test --xunit-output "$RUNNER_TEMP/workspace-swift-tests.xml" 2>&1 | tee "$RUNNER_TEMP/workspace-swift-tests.log"
+          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" swift-output "$RUNNER_TEMP/workspace-swift-tests.log" testP01AcceptsOnlyProtocolVersionOne
+      - name: Build and launch compatibility host
         working-directory: packages/workspace_flutter/ios/CompatibilityHost
         run: |
           pod install
-          simulator_id="$(xcrun simctl list devices 'iOS 18.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
-          xcodebuild -workspace CompatibilityHost.xcworkspace -scheme CompatibilityHost \
-            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
-            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-          xcrun simctl install "$simulator_id" \
-            build/Build/Products/Debug-iphonesimulator/CompatibilityHost.app
-          xcrun simctl launch "$simulator_id" \
-            com.mattsp1290.workspaceflutter.compatibilityhost --terminate-running
-      - name: Run registered-plugin conformance on the iOS simulator
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
+          xcodebuild -workspace CompatibilityHost.xcworkspace -scheme CompatibilityHost -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          xcrun simctl install "$simulator_id" build/Build/Products/Debug-iphonesimulator/CompatibilityHost.app
+          xcrun simctl launch "$simulator_id" com.mattsp1290.workspaceflutter.compatibilityhost --terminate-running
+      - name: Run registered and fixture iOS conformance
         working-directory: packages/workspace_flutter/example
         run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 18.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"; xcrun simctl boot "$simulator_id" || true; xcrun simctl bootstatus "$simulator_id" -b
           flutter test integration_test/native_conformance_test.dart -d "$simulator_id"
-      - name: Run iOS native-test fixture conformance on the iOS simulator
+          flutter test integration_test/native_conformance_test.dart --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true -d "$simulator_id"
+      - name: Restore the normal CocoaPods XCTest host after Flutter conformance
         working-directory: packages/workspace_flutter/example
         run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 18.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
-          flutter test integration_test/native_conformance_test.dart \
-            --flavor nativeTest --dart-define=WORKSPACE_NATIVE_TEST_FIXTURE=true \
-            -d "$simulator_id"
-      - name: Run the linked production-plugin XCTest host
+          # `flutter test integration_test/...` writes a temporary listener
+          # entrypoint into the Xcode configuration, then removes it on exit.
+          # Regenerate the normal app configuration before linked XCTest.
+          flutter clean
+          flutter pub get --enforce-lockfile
+          (cd ios && pod install)
+      - name: Run linked production-plugin XCTest host
         working-directory: packages/workspace_flutter/example/ios
         run: |
-          simulator_id="$(xcrun simctl list devices 'iOS 18.2' -j | jq -r '.devices[][] | select(.name == "iPhone 16 Pro" and .isAvailable == true) | .udid' | head -n1)"
-          test -n "$simulator_id"
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner \
-            -destination "platform=iOS Simulator,id=$simulator_id" test
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"; rm -rf "$RUNNER_TEMP/RunnerTests.xcresult"
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -destination "platform=iOS Simulator,id=$simulator_id" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -resultBundlePath "$RUNNER_TEMP/RunnerTests.xcresult" test
+          "$GITHUB_WORKSPACE/tool/verify_native_test_results.sh" xcresult "$RUNNER_TEMP/RunnerTests.xcresult" 'RunnerTests/testA01A02L01R01R02R03ControlledRootTraversesTheProductionHandler()'
       - run: flutter build ios --no-codesign
         working-directory: packages/workspace_flutter/example
       - run: "! strings build/ios/iphoneos/Runner.app/Runner | grep -E -i 'native.?test|fake.?provider|fixture'"
         working-directory: packages/workspace_flutter/example
+
+  flutter-ios-swiftpm:
+    runs-on: macos-26
+    env: {DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {flutter-version: 3.47.1}
+      - run: xcodebuild -version | grep -F 'Xcode 26.2'
+      - run: flutter config --enable-swift-package-manager
+      - run: flutter --version && swift --version && xcodebuild -version
+      - name: Remove CocoaPods integration in this clean SwiftPM checkout
+        working-directory: packages/workspace_flutter/example/ios
+        run: |
+          pod deintegrate
+          test ! -d Pods
+          mv Podfile Podfile.cocoapods
+      - name: Resolve and build SwiftPM production plugin
+        working-directory: packages/workspace_flutter/example
+        run: |
+          set -o pipefail
+          flutter pub get --enforce-lockfile
+          flutter build ios --no-codesign 2>&1 | tee "$RUNNER_TEMP/flutter-ios-swiftpm.log"
+          "$GITHUB_WORKSPACE/tool/verify_flutter_toolchain_output.sh" ios "$RUNNER_TEMP/flutter-ios-swiftpm.log"
+      - name: Prove SwiftPM linkage uses the production source tree
+        run: |
+          generated=packages/workspace_flutter/example/ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift
+          test -f "$generated"
+          swift package show-dependencies --package-path "$(dirname "$generated")" | grep -E 'workspace_flutter|workspace-flutter'
+          test -f packages/workspace_flutter/ios/workspace_flutter/Package.swift
+          test ! -d packages/workspace_flutter/ios/Classes
+          grep -Fq 'workspace_flutter/Sources/workspace_flutter/**/*' packages/workspace_flutter/ios/workspace_flutter.podspec
+          grep -Fq 'Sources/workspace_flutter' packages/workspace_flutter/ios/workspace_flutter/Package.swift
+      - name: Run registered production-handler conformance through SwiftPM
+        working-directory: packages/workspace_flutter/example
+        run: |
+          simulator_id="$(xcrun simctl list devices 'iOS 26.2' -j | jq -r '.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid' | head -n1)"
+          test -n "$simulator_id"
+          xcrun simctl boot "$simulator_id" || true
+          xcrun simctl bootstatus "$simulator_id" -b
+          flutter test integration_test/native_conformance_test.dart -d "$simulator_id"

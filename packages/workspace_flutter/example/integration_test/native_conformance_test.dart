@@ -296,18 +296,20 @@ void main() {
         );
         expect(restoredAgain!['entryId'], rootId);
 
-        final page = await channel
-            .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-              'protocolVersion': 1,
-              'workspaceId': workspaceId,
-              'envelope': envelope,
-              'directoryId': rootId,
-              'maxEntries': 10,
-              'maxBytes': 1024,
-              'cursor': null,
-              'operationId': 'native_test_list',
-              'remainingMillis': 10000,
-            });
+        final page = await channel.invokeMapMethod<Object?, Object?>(
+          'list',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'directoryId': rootId,
+            'maxEntries': 10,
+            'maxBytes': 1024,
+            'cursor': null,
+            'operationId': 'native_test_list',
+            'remainingMillis': 10000,
+          },
+        );
         expect(page, isNotNull);
         final entries = page!['entries'] as List<Object?>;
         expect(entries, isNotEmpty);
@@ -318,19 +320,21 @@ void main() {
         );
         expect(file['name'], 'fixture.txt');
 
-        final read = await channel
-            .invokeMapMethod<Object?, Object?>('read', <String, Object?>{
-              'protocolVersion': 1,
-              'workspaceId': workspaceId,
-              'envelope': envelope,
-              'fileId': file['entryId'],
-              'offset': 0,
-              'count': 1024,
-              'maxBytes': 1024,
-              'expectedRevision': null,
-              'operationId': 'native_test_read',
-              'remainingMillis': 10000,
-            });
+        final read = await channel.invokeMapMethod<Object?, Object?>(
+          'read',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'fileId': file['entryId'],
+            'offset': 0,
+            'count': 1024,
+            'maxBytes': 1024,
+            'expectedRevision': null,
+            'operationId': 'native_test_read',
+            'remainingMillis': 10000,
+          },
+        );
         expect(read, isNotNull);
         expect(
           utf8.decode(read!['bytes']! as Uint8List),
@@ -359,18 +363,20 @@ void main() {
         final rootId = root!['entryId'] as String;
         final pages = await Future.wait(
           List<Future<Map<Object?, Object?>?>>.generate(8, (index) {
-            return channel
-                .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-                  'protocolVersion': 1,
-                  'workspaceId': workspaceId,
-                  'envelope': envelope,
-                  'directoryId': rootId,
-                  'maxEntries': 10,
-                  'maxBytes': 1024,
-                  'cursor': null,
-                  'operationId': 'native_test_concurrent_lineage_$index',
-                  'remainingMillis': 10000,
-                });
+            return channel.invokeMapMethod<Object?, Object?>(
+              'list',
+              <String, Object?>{
+                'protocolVersion': 1,
+                'workspaceId': workspaceId,
+                'envelope': envelope,
+                'directoryId': rootId,
+                'maxEntries': 10,
+                'maxBytes': 1024,
+                'cursor': null,
+                'operationId': 'native_test_concurrent_lineage_$index',
+                'remainingMillis': 10000,
+              },
+            );
           }),
         );
         final identities = pages.map((page) {
@@ -442,33 +448,37 @@ void main() {
         },
       );
       final rootId = root!['entryId'] as String;
-      final firstPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_cursor_first',
-            'remainingMillis': 10000,
-          });
+      final firstPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_cursor_first',
+          'remainingMillis': 10000,
+        },
+      );
       final cursor = firstPage!['cursor'] as String;
       expect(firstPage['completion'], 'hasMore');
 
-      final secondPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': cursor,
-            'operationId': 'native_test_cursor_second',
-            'remainingMillis': 10000,
-          });
+      final secondPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': cursor,
+          'operationId': 'native_test_cursor_second',
+          'remainingMillis': 10000,
+        },
+      );
       expect(secondPage, isNotNull);
       expect(secondPage!['completion'], 'complete');
       expect(secondPage['cursor'], isNull);
@@ -494,18 +504,20 @@ void main() {
         ),
       );
 
-      final mismatchPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_cursor_mismatch_first',
-            'remainingMillis': 10000,
-          });
+      final mismatchPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_cursor_mismatch_first',
+          'remainingMillis': 10000,
+        },
+      );
       await expectLater(
         channel.invokeMethod<Object?>('list', <String, Object?>{
           'protocolVersion': 1,
@@ -527,18 +539,20 @@ void main() {
         ),
       );
 
-      final expiringPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_cursor_expiry_first',
-            'remainingMillis': 100,
-          });
+      final expiringPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_cursor_expiry_first',
+          'remainingMillis': 100,
+        },
+      );
       await Future<void>.delayed(const Duration(milliseconds: 150));
       await expectLater(
         channel.invokeMethod<Object?>('list', <String, Object?>{
@@ -621,18 +635,20 @@ void main() {
           'envelope': envelope,
         },
       );
-      final page = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': root!['entryId'],
-            'maxEntries': 10,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_range_list',
-            'remainingMillis': 10000,
-          });
+      final page = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': root!['entryId'],
+          'maxEntries': 10,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_range_list',
+          'remainingMillis': 10000,
+        },
+      );
       final fileId = (page!['entries'] as List<Object?>)
           .cast<Map<Object?, Object?>>()
           .firstWhere((entry) => entry['name'] == 'fixture.txt')['entryId'];
@@ -643,19 +659,21 @@ void main() {
         String operationId, {
         Map<String, Object?>? expectedRevision,
       }) async {
-        final value = await channel
-            .invokeMapMethod<Object?, Object?>('read', <String, Object?>{
-              'protocolVersion': 1,
-              'workspaceId': workspaceId,
-              'envelope': envelope,
-              'fileId': fileId,
-              'offset': offset,
-              'count': count,
-              'maxBytes': count,
-              'expectedRevision': expectedRevision,
-              'operationId': operationId,
-              'remainingMillis': 10000,
-            });
+        final value = await channel.invokeMapMethod<Object?, Object?>(
+          'read',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'fileId': fileId,
+            'offset': offset,
+            'count': count,
+            'maxBytes': count,
+            'expectedRevision': expectedRevision,
+            'operationId': operationId,
+            'remainingMillis': 10000,
+          },
+        );
         return Map<Object?, Object?>.from(value!);
       }
 
@@ -742,18 +760,20 @@ void main() {
           'envelope': envelope,
         },
       );
-      final firstPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': firstWorkspace,
-            'envelope': envelope,
-            'directoryId': firstRoot!['entryId'],
-            'maxEntries': 10,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_cross_workspace_list',
-            'remainingMillis': 10000,
-          });
+      final firstPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': firstWorkspace,
+          'envelope': envelope,
+          'directoryId': firstRoot!['entryId'],
+          'maxEntries': 10,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_cross_workspace_list',
+          'remainingMillis': 10000,
+        },
+      );
       final firstFile = (firstPage!['entries'] as List<Object?>)
           .cast<Map<Object?, Object?>>()
           .firstWhere((entry) => entry['type'] == 'file')['entryId'];
@@ -891,18 +911,20 @@ void main() {
           'envelope': envelope,
         },
       );
-      final page = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': root!['entryId'],
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_blocked_read_list',
-            'remainingMillis': 10000,
-          });
+      final page = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': root!['entryId'],
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_blocked_read_list',
+          'remainingMillis': 10000,
+        },
+      );
       final fileId = Map<Object?, Object?>.from(
         (page!['entries'] as List<Object?>).single as Map<Object?, Object?>,
       )['entryId'];
@@ -934,61 +956,62 @@ void main() {
       );
     });
 
-    testWidgets('C02 nativeTest fixture rejects a duplicate live operation ID', (
-      tester,
-    ) async {
-      const workspaceId = 'native-test-duplicate-workspace';
-      const operationId = 'native_test_duplicate_list';
-      final envelope = Platform.isAndroid
-          ? androidEnvelope(
-              'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/blocked',
-            )
-          : iOSEnvelope(<int>[0x57, 0x53, 0x42, 0x4C]);
-      final root = await channel.invokeMapMethod<Object?, Object?>(
-        'restore',
-        <String, Object?>{
+    testWidgets(
+      'C02 nativeTest fixture rejects a duplicate live operation ID',
+      (tester) async {
+        const workspaceId = 'native-test-duplicate-workspace';
+        const operationId = 'native_test_duplicate_list';
+        final envelope = Platform.isAndroid
+            ? androidEnvelope(
+                'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/blocked',
+              )
+            : iOSEnvelope(<int>[0x57, 0x53, 0x42, 0x4C]);
+        final root = await channel.invokeMapMethod<Object?, Object?>(
+          'restore',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+          },
+        );
+        Map<String, Object?> listRequest() => <String, Object?>{
           'protocolVersion': 1,
           'workspaceId': workspaceId,
           'envelope': envelope,
-        },
-      );
-      Map<String, Object?> listRequest() => <String, Object?>{
-        'protocolVersion': 1,
-        'workspaceId': workspaceId,
-        'envelope': envelope,
-        'directoryId': root!['entryId'],
-        'maxEntries': 1,
-        'maxBytes': 1024,
-        'cursor': null,
-        'operationId': operationId,
-        'remainingMillis': 10000,
-      };
-      final first = channel.invokeMethod<Object?>('list', listRequest());
-      await expectLater(
-        channel.invokeMethod<Object?>('list', listRequest()),
-        throwsA(
-          isA<PlatformException>().having(
-            (error) => error.code,
-            'code',
-            'invalidRequest',
+          'directoryId': root!['entryId'],
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': operationId,
+          'remainingMillis': 10000,
+        };
+        final first = channel.invokeMethod<Object?>('list', listRequest());
+        await expectLater(
+          channel.invokeMethod<Object?>('list', listRequest()),
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              'invalidRequest',
+            ),
           ),
-        ),
-      );
-      await channel.invokeMethod<void>('cancel', <String, Object?>{
-        'protocolVersion': 1,
-        'operationId': operationId,
-      });
-      await expectLater(
-        first,
-        throwsA(
-          isA<PlatformException>().having(
-            (error) => error.code,
-            'code',
-            'cancelled',
+        );
+        await channel.invokeMethod<void>('cancel', <String, Object?>{
+          'protocolVersion': 1,
+          'operationId': operationId,
+        });
+        await expectLater(
+          first,
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              'cancelled',
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     testWidgets('C02 nativeTest fixture expires an in-flight deadline', (
       tester,
@@ -1167,18 +1190,20 @@ void main() {
           ),
         ),
       );
-      final page = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': liveWorkspace,
-            'envelope': envelope,
-            'directoryId': liveRoot!['entryId'],
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_close_isolated_live',
-            'remainingMillis': 10000,
-          });
+      final page = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': liveWorkspace,
+          'envelope': envelope,
+          'directoryId': liveRoot!['entryId'],
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_close_isolated_live',
+          'remainingMillis': 10000,
+        },
+      );
       expect(page!['entries'], isNotEmpty);
     });
 
@@ -1273,43 +1298,44 @@ void main() {
   }
 
   if (Platform.isAndroid) {
-    testWidgets('L02 nativeTest fixture rejects a first-entry budget overflow', (
-      tester,
-    ) async {
-      const workspaceId = 'native-test-android-budget-workspace';
-      final envelope = androidEnvelope(
-        'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/root',
-      );
-      final root = await channel.invokeMapMethod<Object?, Object?>(
-        'restore',
-        <String, Object?>{
-          'protocolVersion': 1,
-          'workspaceId': workspaceId,
-          'envelope': envelope,
-        },
-      );
+    testWidgets(
+      'L02 nativeTest fixture rejects a first-entry budget overflow',
+      (tester) async {
+        const workspaceId = 'native-test-android-budget-workspace';
+        final envelope = androidEnvelope(
+          'content://com.mattsp1290.workspace_flutter_example.native_test_documents/tree/root',
+        );
+        final root = await channel.invokeMapMethod<Object?, Object?>(
+          'restore',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+          },
+        );
 
-      await expectLater(
-        channel.invokeMethod<Object?>('list', <String, Object?>{
-          'protocolVersion': 1,
-          'workspaceId': workspaceId,
-          'envelope': envelope,
-          'directoryId': root!['entryId'],
-          'maxEntries': 0,
-          'maxBytes': 1024,
-          'cursor': null,
-          'operationId': 'native_test_android_first_entry_overflow',
-          'remainingMillis': 10000,
-        }),
-        throwsA(
-          isA<PlatformException>().having(
-            (error) => error.code,
-            'code',
-            'budgetExceeded',
+        await expectLater(
+          channel.invokeMethod<Object?>('list', <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'directoryId': root!['entryId'],
+            'maxEntries': 0,
+            'maxBytes': 1024,
+            'cursor': null,
+            'operationId': 'native_test_android_first_entry_overflow',
+            'remainingMillis': 10000,
+          }),
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              'budgetExceeded',
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     testWidgets('L04 nativeTest fixture resumes and consumes cursors', (
       tester,
@@ -1327,33 +1353,37 @@ void main() {
         },
       );
       final rootId = root!['entryId'] as String;
-      final firstPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_android_cursor_first',
-            'remainingMillis': 10000,
-          });
+      final firstPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_android_cursor_first',
+          'remainingMillis': 10000,
+        },
+      );
       expect(firstPage!['completion'], 'hasMore');
       final cursor = firstPage['cursor'] as String;
 
-      final secondPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': cursor,
-            'operationId': 'native_test_android_cursor_second',
-            'remainingMillis': 10000,
-          });
+      final secondPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': cursor,
+          'operationId': 'native_test_android_cursor_second',
+          'remainingMillis': 10000,
+        },
+      );
       expect(secondPage!['completion'], 'complete');
       expect(secondPage['cursor'], isNull);
 
@@ -1378,18 +1408,20 @@ void main() {
         ),
       );
 
-      final mismatchPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_android_cursor_mismatch_first',
-            'remainingMillis': 10000,
-          });
+      final mismatchPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_android_cursor_mismatch_first',
+          'remainingMillis': 10000,
+        },
+      );
       await expectLater(
         channel.invokeMethod<Object?>('list', <String, Object?>{
           'protocolVersion': 1,
@@ -1411,18 +1443,20 @@ void main() {
         ),
       );
 
-      final expiringPage = await channel
-          .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-            'protocolVersion': 1,
-            'workspaceId': workspaceId,
-            'envelope': envelope,
-            'directoryId': rootId,
-            'maxEntries': 1,
-            'maxBytes': 1024,
-            'cursor': null,
-            'operationId': 'native_test_android_cursor_expiry_first',
-            'remainingMillis': 100,
-          });
+      final expiringPage = await channel.invokeMapMethod<Object?, Object?>(
+        'list',
+        <String, Object?>{
+          'protocolVersion': 1,
+          'workspaceId': workspaceId,
+          'envelope': envelope,
+          'directoryId': rootId,
+          'maxEntries': 1,
+          'maxBytes': 1024,
+          'cursor': null,
+          'operationId': 'native_test_android_cursor_expiry_first',
+          'remainingMillis': 100,
+        },
+      );
       await Future<void>.delayed(const Duration(milliseconds: 150));
       await expectLater(
         channel.invokeMethod<Object?>('list', <String, Object?>{
@@ -1465,18 +1499,20 @@ void main() {
             'envelope': envelope,
           },
         );
-        final page = await channel
-            .invokeMapMethod<Object?, Object?>('list', <String, Object?>{
-              'protocolVersion': 1,
-              'workspaceId': workspaceId,
-              'envelope': envelope,
-              'directoryId': root!['entryId'],
-              'maxEntries': 1,
-              'maxBytes': 1024,
-              'cursor': null,
-              'operationId': 'native_test_mutation_list_$rootName',
-              'remainingMillis': 10000,
-            });
+        final page = await channel.invokeMapMethod<Object?, Object?>(
+          'list',
+          <String, Object?>{
+            'protocolVersion': 1,
+            'workspaceId': workspaceId,
+            'envelope': envelope,
+            'directoryId': root!['entryId'],
+            'maxEntries': 1,
+            'maxBytes': 1024,
+            'cursor': null,
+            'operationId': 'native_test_mutation_list_$rootName',
+            'remainingMillis': 10000,
+          },
+        );
         final entry =
             (page!['entries']! as List<Object?>).single
                 as Map<Object?, Object?>;

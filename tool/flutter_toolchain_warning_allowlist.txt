@@ -1,0 +1,3 @@
+# platform|external module/package|exact locked version|upstream issue URL|review-by (UTC)
+# Keep this empty unless current, fully updated dependencies still emit a
+# third-party diagnostic. Repository-owned modules are never allowlisted.

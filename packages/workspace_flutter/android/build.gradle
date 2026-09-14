@@ -1,14 +1,7 @@
 group 'com.mattsp1290.workspace_flutter'
 version '1.0-SNAPSHOT'
 
-buildscript {
-    ext.kotlin_version = '1.9.22'
-    repositories { google(); mavenCentral() }
-    dependencies { classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version" }
-}
-
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android { namespace 'com.mattsp1290.workspace_flutter'; compileSdk 35
     defaultConfig {
@@ -21,7 +14,15 @@ android { namespace 'com.mattsp1290.workspace_flutter'; compileSdk 35
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
-    kotlinOptions { jvmTarget = '11' }
+}
+
+// Flutter 3.44+ supplies Kotlin as a Built-in Kotlin plugin.  Keeping the
+// bytecode target explicit preserves the previous library ABI without
+// resolving or applying an external Kotlin Gradle Plugin.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
 }
 
 dependencies {

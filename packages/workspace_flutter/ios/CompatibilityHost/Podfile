@@ -17,7 +17,11 @@ flutter_ios_podfile_setup
 
 target 'CompatibilityHost' do
   use_frameworks!
-  flutter_install_all_ios_pods(File.expand_path('../../example/ios', __dir__))
+  flutter_install_ios_engine_pod(File.expand_path('../../example/ios', __dir__))
+  # The compatibility host imports the production plugin directly. Keep this
+  # explicit so it continues to exercise CocoaPods when Flutter SwiftPM is
+  # enabled globally on a developer machine.
+  pod 'workspace_flutter', :path => '..'
 end
 
 post_install do |installer|

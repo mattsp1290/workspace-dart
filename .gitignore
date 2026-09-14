@@ -107,6 +107,15 @@ unlinked_spec.ds
 # Coverage
 coverage/
 
+# Pub lockfiles are committed for the reproducible package/toolchain gates.
+!/pubspec.lock
+!/packages/workspace_flutter/pubspec.lock
+!/packages/workspace_flutter/example/pubspec.lock
+
+# Swift Package Manager build state is generated, never an archive input.
+**/.build/
+**/.swiftpm/
+
 # Symbols
 app.*.symbols
 

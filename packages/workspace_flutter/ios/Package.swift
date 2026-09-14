@@ -8,7 +8,7 @@ let package = Package(
     .library(name: "WorkspaceFlutterNative", targets: ["WorkspaceFlutterNative"]),
   ],
   targets: [
-    .target(name: "WorkspaceFlutterNative", path: "Classes/Internal"),
+    .target(name: "WorkspaceFlutterNative", path: "workspace_flutter/Sources/workspace_flutter/Internal"),
     .testTarget(name: "WorkspaceFlutterNativeTests", dependencies: ["WorkspaceFlutterNative"], path: "Tests"),
   ]
 )
