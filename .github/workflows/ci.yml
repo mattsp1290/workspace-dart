@@ -11,7 +11,7 @@ jobs:
       - run: dart --version
       - run: dart pub get --enforce-lockfile
       - run: git diff --check
-      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart format --output=none --set-exit-if-changed packages/workspace
       - run: dart analyze
       - run: dart test packages/workspace
       - run: tool/test_ci_policy_checks.sh
@@ -49,6 +49,9 @@ jobs:
         working-directory: packages/workspace_flutter
       - run: flutter pub get --enforce-lockfile
         working-directory: packages/workspace_flutter/example
+      - name: Check Flutter-package formatting after Flutter dependencies resolve
+        run: dart format --output=none --set-exit-if-changed .
+        working-directory: packages/workspace_flutter
       - run: flutter analyze && flutter test
         working-directory: packages/workspace_flutter/example
       - name: Build production APK and reject owned Kotlin diagnostics
