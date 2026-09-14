@@ -1,11 +1,13 @@
 # Native feasibility evidence
 
-Evidence date: 2026-09-13. The published automated baseline is commit
-`d3de2811958768cef428307c3bb0d0d207a8de30`; a clean external consumer
-resolved both packages to that exact Git commit and passed its API smoke test.
-The current toolchain and physical-provider evidence was run from the
-uncommitted implementation worktree based on that baseline. Commit it and
-repeat the immutable-consumer proof before making a release claim.
+Evidence date: 2026-09-13. The mobile-access implementation is committed as
+`c3a24983155b2dc19746072c3accefaf8bc0dd1b`; the toolchain and physical-provider
+evidence below applies to that implementation. The earlier published automated
+baseline, `d3de2811958768cef428307c3bb0d0d207a8de30`, also proved that a clean
+external consumer could resolve both packages at one immutable Git commit and
+pass its API smoke test. CI now runs that consumer proof as a required check
+against the pull request's reachable head commit (or the pushed commit), so a
+release claim requires its successful result for the final branch revision.
 
 ## Toolchain
 
