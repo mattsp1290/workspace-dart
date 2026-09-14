@@ -18,7 +18,8 @@ let package = Package(
       name: "workspace_flutter",
       dependencies: [
         .product(name: "FlutterFramework", package: "FlutterFramework"),
-      ]
+      ],
+      path: "Sources/workspace_flutter"
     ),
   ]
 )
