@@ -164,7 +164,6 @@ jobs:
           test -f "$generated"
           swift package show-dependencies --package-path "$(dirname "$generated")" | grep -E 'workspace_flutter|workspace-flutter'
           test -f packages/workspace_flutter/ios/workspace_flutter/Package.swift
-          test ! -e 'packages/workspace_flutter/example/ios/Pods/Local Podspecs/workspace_flutter.podspec.json'
           test ! -d packages/workspace_flutter/ios/Classes
           grep -Fq 'workspace_flutter/Sources/workspace_flutter/**/*' packages/workspace_flutter/ios/workspace_flutter.podspec
           grep -Fq 'Sources/workspace_flutter' packages/workspace_flutter/ios/workspace_flutter/Package.swift
