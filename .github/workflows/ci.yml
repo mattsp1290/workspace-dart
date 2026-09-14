@@ -75,7 +75,7 @@ jobs:
           # The hosted runner has no reliable hardware GPU surface.  Use the
           # software GPU fallback, but keep the virtual display available for
           # the action's post-boot ADB input handshake.
-          emulator-options: -no-snapshot -no-audio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
           disable-animations: true
           working-directory: packages/workspace_flutter/example
           script: |
