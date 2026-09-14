@@ -150,6 +150,7 @@ jobs:
         run: |
           pod deintegrate
           test ! -d Pods
+          mv Podfile Podfile.cocoapods
       - name: Resolve and build SwiftPM production plugin
         working-directory: packages/workspace_flutter/example
         run: |
@@ -163,6 +164,7 @@ jobs:
           test -f "$generated"
           swift package show-dependencies --package-path "$(dirname "$generated")" | grep -E 'workspace_flutter|workspace-flutter'
           test -f packages/workspace_flutter/ios/workspace_flutter/Package.swift
+          test ! -d packages/workspace_flutter/example/ios/Pods
           test ! -e 'packages/workspace_flutter/example/ios/Pods/Local Podspecs/workspace_flutter.podspec.json'
           test ! -d packages/workspace_flutter/ios/Classes
           grep -Fq 'workspace_flutter/Sources/workspace_flutter/**/*' packages/workspace_flutter/ios/workspace_flutter.podspec

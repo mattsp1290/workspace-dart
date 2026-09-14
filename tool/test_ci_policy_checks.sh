@@ -52,3 +52,7 @@ cat > "$tmp/junit/result.xml" <<'EOF'
 <testsuite tests="1" failures="0" errors="0"><testcase name="WorkspaceProtocolTest"/></testsuite>
 EOF
 "$root/tool/verify_native_test_results.sh" junit "$tmp/junit" WorkspaceProtocolTest
+
+swiftpm_job=$(sed -n '/flutter-ios-swiftpm:/,/^$/p' "$root/.github/workflows/ci.yml")
+grep -Fq 'mv Podfile Podfile.cocoapods' <<<"$swiftpm_job"
+grep -Fq 'test ! -d packages/workspace_flutter/example/ios/Pods' <<<"$swiftpm_job"
