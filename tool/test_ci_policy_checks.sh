@@ -73,6 +73,9 @@ grep -Fq 'flutter pub get --enforce-lockfile' <<<"$cocoapods_job"
 android_job=$(sed -n '/flutter-android:/,/^$/p' "$root/.github/workflows/ci.yml")
 grep -Fq 'Install the Android emulator PulseAudio runtime' <<<"$android_job"
 grep -Fq 'sudo apt-get install --yes libpulse0' <<<"$android_job"
+grep -Fq 'Enable KVM for the Android emulator' <<<"$android_job"
+grep -Fq 'test -e /dev/kvm' <<<"$android_job"
+grep -Fq '99-kvm4all.rules' <<<"$android_job"
 grep -Fq 'emulator-options: -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect' <<<"$android_job"
 grep -Fq 'disable-animations: true' <<<"$android_job"
 
